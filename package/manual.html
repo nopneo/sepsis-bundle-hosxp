@@ -280,7 +280,9 @@ cd C:\sepsis_bundle; .venv\Scripts\python.exe setup_check.py</pre>
     <li>เชิญบัญชี LINE <b>"หมอพร้อม"</b> เข้ากลุ่ม</li>
     <li>Admin หน่วยบริการเข้า CMS MOPH Notify แล้ว<b>อนุมัติกลุ่ม</b></li>
     <li>ดู <b>Client_ID</b> และ <b>Secret</b> ของกลุ่มในเมนูกลุ่มบอท</li>
-    <li>เปิด <code>http://&lt;IP เครื่อง&gt;:5800/settings</code> (หรือปุ่ม "⚙️ ตั้งค่าแจ้งเตือน" บนแดชบอร์ด) กรอก Client Key และ Secret Key แล้วกด <b>บันทึก + ทดสอบส่ง</b></li>
+    <li>เปิด <code>http://&lt;IP เครื่อง&gt;:5800/settings</code> (หรือปุ่ม "⚙️ ตั้งค่าแจ้งเตือน" บนแดชบอร์ด) ใส่รหัสผ่าน <code>SEPSIS_SETTINGS_PASSWORD</code> จาก <code>.env</code>
+        (ชื่อผู้ใช้อะไรก็ได้ · Linux: <code>install.sh</code> สร้างให้ · ถ้าไม่ตั้ง เปิดได้เฉพาะบนเครื่องเซิร์ฟเวอร์ที่ <code>http://127.0.0.1:5800/settings</code>)
+        กรอก Client Key และ Secret Key แล้วกด <b>บันทึก + ทดสอบส่ง</b></li>
   </ol>
   <p>ถ้าสำเร็จ กลุ่ม LINE จะได้การ์ดทดสอบ 2 ใบ (ข้อมูลสมมติ) ค่าที่บันทึกเก็บใน <code>data/moph_settings.json</code> ไม่ต้อง restart</p>
   <img class="shot" src="img/settings.png" alt="" style="width:78%; display:block; margin:8px auto">
@@ -472,7 +474,8 @@ python install_alert.py rollback --host &lt;IP ฐานหลัก&gt; --user 
   <div class="box danger"><b>ห้ามเปิดแดชบอร์ดออกอินเทอร์เน็ต</b> — หน้าเว็บแสดงข้อมูลผู้ป่วย (HN/AN/ICD10/บันทึกพยาบาล) และ<b>ไม่มีระบบล็อกอิน</b>
      ใช้เฉพาะในวง LAN ของโรงพยาบาล ห้ามทำ port forward หรือ reverse proxy ออกภายนอก</div>
   <ul>
-    <li>หน้า <code>/settings</code> แก้ค่า MOPH Notify ได้โดยไม่ต้องล็อกอิน — ถ้าวง LAN กว้าง ควรจำกัด IP ที่เข้าพอร์ต 5800 ได้ด้วย firewall
+    <li>หน้า <code>/settings</code> ต้องใส่รหัสผ่าน <code>SEPSIS_SETTINGS_PASSWORD</code> (ไม่ตั้ง = เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์) และรับ URL ของ MOPH Notify
+        เฉพาะ <code>https://*.moph.go.th</code> — ส่วนแดชบอร์ดยังไม่มีล็อกอิน ถ้าวง LAN กว้าง ควรจำกัด IP ที่เข้าพอร์ต 5800 ได้ด้วย firewall
         เช่น <code>firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=192.168.10.0/24 port port=5800 protocol=tcp accept'</code></li>
     <li>ใช้ user ฐานข้อมูลแบบ SELECT อย่างเดียว · ไฟล์ <code>.env</code> และ <code>data/</code> จำกัดสิทธิ์ให้เฉพาะระบบอ่านได้ — ห้ามส่งไฟล์เหล่านี้ให้ผู้อื่น</li>
     <li>ข้อความแจ้งเตือนไม่มีชื่อผู้ป่วย แต่มี HN/AN — ตั้งกลุ่ม LINE เป็นกลุ่มปิดเฉพาะบุคลากรที่เกี่ยวข้อง และทบทวนสมาชิกเป็นระยะ</li>

@@ -13,9 +13,14 @@
 """
 
 import json
+import logging
 import os
+import tempfile
+from urllib.parse import urlsplit
 
 import requests
+
+log = logging.getLogger(__name__)
 
 SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "moph_settings.json")
 
@@ -36,11 +41,29 @@ ERROR_HINTS = {
 }
 
 
+def allowed_base_url(url):
+    """ปลายทางต้องเป็น https ของ moph.go.th — กันการเปลี่ยน URL ไปเซิร์ฟเวอร์อื่นแล้วได้ key + ข้อมูลเคสไป"""
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return False
+    return parts.scheme == "https" and (host == "moph.go.th" or host.endswith(".moph.go.th"))
+
+
 def load_settings():
+    """ไฟล์ไม่มี/เสีย = ค่าเริ่มต้น (บันทึก log) — ไม่ให้ scheduler และหน้าเว็บล่มเพราะไฟล์ตั้งค่า"""
     if not os.path.exists(SETTINGS_PATH):
         return dict(DEFAULT_SETTINGS)
-    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("ไม่ใช่ JSON object")
+    except (OSError, ValueError) as exc:
+        log.error("อ่าน %s ไม่ได้ (%s) — ใช้ค่าเริ่มต้น ต้องตั้งค่า MOPH Notify ใหม่ที่หน้า /settings",
+                  SETTINGS_PATH, exc)
+        return dict(DEFAULT_SETTINGS)
     merged = dict(DEFAULT_SETTINGS)
     merged.update({k: v for k, v in data.items() if k in DEFAULT_SETTINGS})
     return merged
@@ -50,13 +73,23 @@ def save_settings(values):
     """บันทึกทับบางส่วน — ไม่ส่ง secret_key มา = คงค่าเดิม (ช่องว่างในฟอร์ม)"""
     current = load_settings()
     current.update(values)
-    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
-    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(current, f, ensure_ascii=False, indent=2)
+    folder = os.path.dirname(SETTINGS_PATH)
+    os.makedirs(folder, exist_ok=True)
+    # เขียนลงไฟล์ชั่วคราวแล้วค่อยแทนที่ — ไฟล์จริงจึงไม่มีวันเหลือครึ่งเดียว (เครื่องดับ/ดิสก์เต็มกลางคัน)
+    # mkstemp สร้างไฟล์สิทธิ์ 600 ตั้งแต่แรก ไม่มีช่วงที่ user อื่นอ่าน secret ได้
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".moph_settings.", suffix=".tmp")
     try:
-        os.chmod(SETTINGS_PATH, 0o600)
-    except OSError:
-        pass
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(current, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, SETTINGS_PATH)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
     return current
 
 
@@ -70,6 +103,8 @@ def send_messages(messages, settings=None):
     s = settings or load_settings()
     if not is_configured(s):
         raise RuntimeError("ยังไม่ได้ตั้งค่า MOPH Notify (client-key / secret-key) ที่หน้า /settings")
+    if not allowed_base_url(s["base_url"]):
+        raise RuntimeError(f"URL ของ MOPH Notify ไม่ใช่ https://*.moph.go.th ({s['base_url']}) — แก้ที่หน้า /settings")
 
     resp = requests.post(
         f"{s['base_url'].rstrip('/')}/api/notify/send",

@@ -14,7 +14,7 @@ import tempfile
 import zipfile
 from datetime import date
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 TH_MONTH = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
             "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
 

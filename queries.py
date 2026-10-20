@@ -26,6 +26,9 @@ time-zero (โหมด er, ค่าเริ่มต้น) = ค่าแร
 
 import os
 import re
+import threading
+import time
+from collections import OrderedDict
 from functools import lru_cache
 from datetime import date, datetime, time as dtime, timedelta
 
@@ -39,9 +42,15 @@ SEPSIS_ICD10_PREFIXES = ("A40", "A41")   # Sepsis
 SEPSIS_ICD10_EXACT = ("R572",)           # Septic shock
 
 
+#: ค่ารหัส ICD10 สำหรับส่งเป็นพารามิเตอร์คู่กับ _icd10_cond() — fetch(sql, {**ICD10_PARAMS, ...})
+ICD10_PARAMS = {**{f"icd_p{i}": p + "%" for i, p in enumerate(SEPSIS_ICD10_PREFIXES)},
+                **{f"icd_e{i}": e for i, e in enumerate(SEPSIS_ICD10_EXACT)}}
+
+
 def _icd10_cond(alias="d"):
-    prefixes = " or ".join(f"{alias}.icd10 like '{p}%'" for p in SEPSIS_ICD10_PREFIXES)
-    exacts = " or ".join(f"{alias}.icd10 = '{e}'" for e in SEPSIS_ICD10_EXACT)
+    """เงื่อนไข ICD10 sepsis — ต้องส่ง ICD10_PARAMS ไปกับคำสั่งด้วย"""
+    prefixes = " or ".join(f"{alias}.icd10 like %(icd_p{i})s" for i in range(len(SEPSIS_ICD10_PREFIXES)))
+    exacts = " or ".join(f"{alias}.icd10 = %(icd_e{i})s" for i in range(len(SEPSIS_ICD10_EXACT)))
     return f"(({prefixes}) or ({exacts}))"
 
 
@@ -136,10 +145,11 @@ def _has(table, column=None):
     """มีตาราง/คอลัมน์นี้ในฐานข้อมูลไหม — HOSxP รุ่นเก่าบางแห่งยังไม่มีช่องเวลา sepsis ใน er_regist"""
     key = (table, column)
     if key not in _schema_cache:
-        cond = f"and column_name = '{column}'" if column else ""
+        cond = "and column_name = %(column)s" if column else ""
         _schema_cache[key] = bool(fetch_one(f"""
             select 1 x from information_schema.columns
-            where table_schema = database() and table_name = '{table}' {cond} limit 1"""))
+            where table_schema = database() and table_name = %(table)s {cond} limit 1""",
+            {"table": table, "column": column}))
     return _schema_cache[key]
 
 
@@ -183,18 +193,18 @@ def find_sepsis_cases(lookback_days=7, d1=None, d2=None):
                    where d.an = i.an and {_icd10_cond('d')})) icd10_raw
         from (
             select od.vn from ovstdiag od
-             where od.vstdate between '{a}' and '{b}' and {_icd10_cond('od')}
+             where od.vstdate between %(a)s and %(b)s and {_icd10_cond('od')}
             union
             select ii.vn from iptdiag d join ipt ii on ii.an = d.an
-             where ii.regdate between '{a}' and '{b1}' and {_icd10_cond('d')}
+             where ii.regdate between %(a)s and %(b1)s and {_icd10_cond('d')}
         ) v
-        join ovst o on o.vn = v.vn and o.vstdate between '{a}' and '{b}'
+        join ovst o on o.vn = v.vn and o.vstdate between %(a)s and %(b)s
         left join ipt i on i.vn = o.vn
         left join ward w on w.ward = i.ward
         left join er_regist e on e.vn = o.vn
         left join opdscreen s on s.vn = o.vn
         order by o.vstdate desc, o.vsttime desc
-    """)
+    """, {**ICD10_PARAMS, "a": a, "b": b, "b1": b1})
     for r in rows:
         codes = sorted({c for c in (r.get("icd10_raw") or "").split(",") if c})
         r["icd10_list"] = ", ".join(fmt_icd10(c) for c in codes)
@@ -267,14 +277,18 @@ def _window(tz):
 
 # -------------------------------------------------------- 2. element แต่ละตัว
 
+#: รายการยาปฏิชีวนะ — โหลดใหม่ทุกชั่วโมง ห้องยาเพิ่มยาใหม่แล้วไม่ต้องรีสตาร์ตแอป
+_ANTIBIOTIC_TTL = 3600
 _antibiotic_icodes = None
+_antibiotic_loaded = 0.0
 _ROW_ICODE = re.compile(r'<ROW [^>]*\bicode="(\d+)"')
 
 
 def _antibiotics():
-    global _antibiotic_icodes
-    if _antibiotic_icodes is None:
+    global _antibiotic_icodes, _antibiotic_loaded
+    if _antibiotic_icodes is None or time.time() - _antibiotic_loaded > _ANTIBIOTIC_TTL:
         _antibiotic_icodes = {r["icode"] for r in fetch("select icode from drugitems where antibiotic='Y'")}
+        _antibiotic_loaded = time.time()
     return _antibiotic_icodes
 
 
@@ -286,9 +300,9 @@ def _er_logs(vn, start, end):
     logs = fetch(f"""
         select l.event_date_time t, replace(replace(l.new_delta, char(13), ''), char(10), ' ') x
         from opitemrece_log l
-        where l.vn = '{vn}' and l.event_date_time between '{start}' and '{end}'
+        where l.vn = %(vn)s and l.event_date_time between %(start)s and %(end)s
         order by l.event_date_time
-    """)
+    """, {"vn": vn, "start": start, "end": end})
     return tuple((_to_dt_single(lg["t"]), frozenset(_ROW_ICODE.findall(lg.get("x") or ""))) for lg in logs)
 
 
@@ -300,15 +314,15 @@ def _er_log_first(vn, icodes, start, end):
     return None
 
 
-def _ward_order_first(an, icode_sql, start, end):
+def _ward_order_first(an, icodes, start, end):
     """คำสั่งยาบนหอ (item_type='P') ครั้งแรก — ไม่ใช้แถวที่โอนจาก ER ซึ่งเวลาเป็นเวลาลงทะเบียน"""
     if not an:
         return None
     row = fetch_one(f"""
         select min(timestamp(o.rxdate, o.rxtime)) t from opitemrece o
-        where o.an = '{an}' and o.item_type = 'P' and o.icode in ({icode_sql})
-          and timestamp(o.rxdate, o.rxtime) between '{start}' and '{end}'
-    """)
+        where o.an = %(an)s and o.item_type = 'P' and o.icode in %(icodes)s
+          and timestamp(o.rxdate, o.rxtime) between %(start)s and %(end)s
+    """, {"an": an, "icodes": sorted(icodes), "start": start, "end": end})
     return _to_dt_single(row.get("t"))
 
 
@@ -321,28 +335,26 @@ def _order_event(case, icodes, start, end, er_recorded=None, what="ยา"):
     """เวลาสั่งรายการใน icodes ครั้งแรก (ยา หรือรายการค่าบริการ เช่น Hemoculture)"""
     if not icodes:
         return None, None
-    icode_sql = ",".join(f"'{c}'" for c in sorted(icodes))
     lo, hi = _to_dt_single(start), _to_dt_single(end)
     er_rec = er_recorded if er_recorded and lo <= er_recorded <= hi else None
     return _earliest([
         (er_rec, f"ER บันทึกเวลาให้{what}"),
         (_er_log_first(case["vn"], icodes, start, end), f"สั่ง{what}ที่ ER"),
-        (_ward_order_first(case.get("an"), icode_sql, start, end), f"สั่ง{what}บนหอผู้ป่วย"),
+        (_ward_order_first(case.get("an"), icodes, start, end), f"สั่ง{what}บนหอผู้ป่วย"),
     ])
 
 
 def _lab_event(hn, item_codes, start, end):
     if not item_codes:
         return None, None
-    codes = ",".join(f"'{c}'" for c in item_codes)
     row = fetch_one(f"""
         select min(timestamp(h.order_date, h.order_time)) ordered_at
         from lab_head h
         join lab_order o on o.lab_order_number = h.lab_order_number
-        where h.hn = '{hn}' and o.lab_items_code in ({codes})
+        where h.hn = %(hn)s and o.lab_items_code in %(codes)s
           and h.order_date is not null and h.order_time is not null
-          and timestamp(h.order_date, h.order_time) between '{start}' and '{end}'
-    """)
+          and timestamp(h.order_date, h.order_time) between %(start)s and %(end)s
+    """, {"hn": hn, "codes": list(item_codes), "start": start, "end": end})
     dt = _to_dt_single(row.get("ordered_at"))
     return dt, ("สั่ง Lab" if dt else None)
 
@@ -351,16 +363,15 @@ def _lab_results(hn, item_codes, start, end):
     """[(เวลาสั่ง, ค่าผล float|None)] เรียงตามเวลา — ใช้กับ Lactate (ค่าแรก + การวัดซ้ำ)"""
     if not item_codes:
         return []
-    codes = ",".join(f"'{c}'" for c in item_codes)
     rows = fetch(f"""
         select timestamp(h.order_date, h.order_time) t, o.lab_order_result r
         from lab_head h
         join lab_order o on o.lab_order_number = h.lab_order_number
-        where h.hn = '{hn}' and o.lab_items_code in ({codes})
+        where h.hn = %(hn)s and o.lab_items_code in %(codes)s
           and h.order_date is not null and h.order_time is not null
-          and timestamp(h.order_date, h.order_time) between '{start}' and '{end}'
+          and timestamp(h.order_date, h.order_time) between %(start)s and %(end)s
         order by t
-    """)
+    """, {"hn": hn, "codes": list(item_codes), "start": start, "end": end})
     return [(_to_dt_single(r["t"]), _num_or_none(r.get("r"))) for r in rows]
 
 
@@ -411,8 +422,8 @@ def _nurse_text(vn):
     """บันทึกซักประวัติ/การพยาบาลของ visit ER (พยาบาลเขียนลำดับการดูแลพร้อมเวลาไว้ใน hpi)"""
     row = fetch_one(f"""
         select replace(replace(concat_ws(' - ', o.hpi, o.note), char(13), ' '), char(10), ' ') t
-        from opdscreen o where o.vn = '{vn}'
-    """)
+        from opdscreen o where o.vn = %(vn)s
+    """, {"vn": vn})
     return row.get("t") or ""
 
 
@@ -710,8 +721,37 @@ def bundle_status(case):
     }
 
 
+#: แคชผลของเคสที่พ้นช่วงค้นหาแล้ว (time-zero + SEPSIS_WINDOW_HOURS ผ่านไปเกิน 1 ชม.) — ผลแทบไม่เปลี่ยน
+#: แต่ต้องยิงราว 12 คำสั่งต่อเคส ดูช่วงปีงบจึงช้า · เคสที่ยังอยู่ในช่วงคำนวณใหม่ทุกครั้ง
+#: คีย์รวม ICD10/การจำหน่าย ข้อมูลส่วนนั้นเปลี่ยนเมื่อไรคำนวณใหม่ทันที · 0 = ปิด
+CASE_CACHE_TTL = int(os.getenv("SEPSIS_CASE_CACHE_SECONDS", "1800"))
+CASE_CACHE_MAX = 2000
+_case_cache = OrderedDict()
+_case_cache_lock = threading.Lock()
+
+
+def _cached_bundle_status(case, now=None):
+    tz, _ = time_zero_info(case)
+    now = now or datetime.now()
+    if not CASE_CACHE_TTL or now < tz + timedelta(hours=WINDOW_END_HOURS + 1):
+        return bundle_status(case)
+    key = (case["vn"], case.get("an"), case.get("icd10_list"), repr(case.get("disposition")), tz)
+    with _case_cache_lock:
+        hit = _case_cache.get(key)
+        if hit and time.time() - hit[0] < CASE_CACHE_TTL:
+            _case_cache.move_to_end(key)
+            return hit[1]
+    result = bundle_status(case)
+    with _case_cache_lock:
+        _case_cache[key] = (time.time(), result)
+        _case_cache.move_to_end(key)
+        while len(_case_cache) > CASE_CACHE_MAX:
+            _case_cache.popitem(last=False)
+    return result
+
+
 def build(lookback_days=7, d1=None, d2=None):
-    return [bundle_status(c) for c in find_sepsis_cases(lookback_days, d1, d2)]
+    return [_cached_bundle_status(c) for c in find_sepsis_cases(lookback_days, d1, d2)]
 
 
 AUTO_ELEMENTS = [("lactate", "Lactate"), ("culture", "Hemoculture"),

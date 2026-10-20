@@ -94,10 +94,11 @@ def check_cases():
     head("3. เคส sepsis ใน 1 ปีที่ผ่านมา (A40.x, A41.x, R57.2)")
     row = db.fetch_one(f"""
         select count(distinct vn) n from (
-            select od.vn from ovstdiag od where od.vstdate >= '{SINCE}' and {queries._icd10_cond('od')}
+            select od.vn from ovstdiag od where od.vstdate >= %(since)s and {queries._icd10_cond('od')}
             union
             select ii.vn from iptdiag d join ipt ii on ii.an = d.an
-             where ii.regdate >= '{SINCE}' and {queries._icd10_cond('d')}) v""")
+             where ii.regdate >= %(since)s and {queries._icd10_cond('d')}) v""",
+        {**queries.ICD10_PARAMS, "since": SINCE})
     n = db.num(row.get("n"))
     if n:
         ok(f"พบ {n} visit")

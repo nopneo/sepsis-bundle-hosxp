@@ -59,8 +59,11 @@ MOPH Notify ส่งข้อความเข้า **LINE group ของห
 
 แล้วเปิดหน้า `/settings` ในแอป (ลิงก์ "⚙️ ตั้งค่าแจ้งเตือน" บนแดชบอร์ด) กรอก Client Key / Secret Key
 กด "บันทึก + ทดสอบส่ง" ระบบยิง `POST {URL}/api/notify/send` (header `client-key`/`secret-key`)
-URL ค่าเริ่มต้น `https://morpromt2f.moph.go.th` ค่าที่บันทึกเก็บที่ `data/moph_settings.json`
-(chmod 600 อัตโนมัติบน Linux) ไม่ต้องแก้ `.env` + restart แอป
+URL ค่าเริ่มต้น `https://morpromt2f.moph.go.th` (รับเฉพาะ `https://*.moph.go.th`) ค่าที่บันทึกเก็บที่ `data/moph_settings.json`
+(สิทธิ์ 600 ตั้งแต่สร้างไฟล์ · เขียนแบบ atomic) ไม่ต้องแก้ `.env` + restart แอป
+
+**หน้า `/settings` ต้องใส่รหัสผ่าน** `SEPSIS_SETTINGS_PASSWORD` ใน `.env` (ชื่อผู้ใช้อะไรก็ได้) — ถ้าไม่ตั้ง
+เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์เอง (`http://127.0.0.1:<port>/settings`) เพราะใครแก้หน้านี้ได้ก็เปลี่ยนปลายทางการแจ้งเตือนได้
 
 ถ้ายังไม่ได้ตั้งค่า MOPH Notify, `scheduler.py` จะ fallback ไปใช้ LINE Messaging API (`notify.py`
 + `.env`) แทนโดยอัตโนมัติ — ตั้งอย่างใดอย่างหนึ่งก็พอ
@@ -96,6 +99,8 @@ URL ค่าเริ่มต้น `https://morpromt2f.moph.go.th` ค่า�
 - `notify.py` — แจ้งเตือนผ่าน LINE Messaging API
 - `moph_notify.py` — แจ้งเตือนเข้า LINE group ผ่าน MOPH Notify (หมอพร้อม) + เก็บ/โหลดค่าตั้งค่าใน `data/moph_settings.json`
 - `scheduler.py` — งาน cron ที่ดึงเคสใหม่ + แจ้งเตือน (MOPH Notify ก่อน ไม่งั้น fallback LINE, กันยิงซ้ำด้วย SQLite ใน `data/`)
+  รอบก่อนยังไม่จบ = ข้ามรอบนี้ (`data/scheduler.lock`) · log ที่ `data/scheduler.log` หมุนไฟล์เอง (1 MB × 5)
+- `tests/` — ชุดทดสอบ (ตัวอ่านบันทึกพยาบาล, หน้า `/settings`, การส่งพารามิเตอร์ SQL, แคช, ล็อก scheduler)
 - `app.py` + `templates/dashboard.html` — เว็บแดชบอร์ดดูสถานะ bundle รายเคส
 - `templates/settings.html` — หน้าตั้งค่า MOPH Notify (`/settings`)
 
@@ -104,7 +109,14 @@ URL ค่าเริ่มต้น `https://morpromt2f.moph.go.th` ค่า�
 ```bash
 cp .env.example .env   # ใส่ DB_USER/DB_PASS หรือปล่อยว่างแล้วตั้ง SEPSIS_SSH_HOST ให้ใช้โหมด ssh
 pip install -r requirements.txt
-python app.py           # http://127.0.0.1:5500/
+python app.py           # http://127.0.0.1:5500/   (debug ปิด · เปิดด้วย FLASK_DEBUG=1 จะฟังแค่ 127.0.0.1)
+```
+
+ทดสอบ (ไม่ต้องต่อฐานข้อมูล):
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
 ```
 
 ทดสอบ scheduler/แจ้งเตือนเฉย ๆ (ไม่รัน web):
