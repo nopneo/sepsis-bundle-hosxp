@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sepsis Six Bundle — {{ hospital }}</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='fonts.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<style>
+  .range { margin-top: 16px; }
+  .range .ch .set { margin-left: auto; }
+  .rf { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+  .rf label { display: flex; flex-direction: column; gap: 4px; font-family: "Kanit", sans-serif;
+              font-weight: 600; font-size: 14.5px; color: var(--navy); }
+  .rf input { font: inherit; font-family: "Sarabun", sans-serif; font-weight: 400; font-size: 16.5px; color: var(--ink);
+              padding: 8px 12px; border: 1.5px solid #cfc8ee; border-radius: 12px; background: #fff; min-width: 170px; }
+  .rf input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(109,78,232,.18); }
+  .rf button { padding: 9px 20px; border: none; border-radius: 12px; cursor: pointer; color: #fff;
+               background: linear-gradient(135deg, #6d4ee8, #a47bf7); box-shadow: 0 6px 14px rgba(109,78,232,.28);
+               font-family: "Kanit", sans-serif; font-weight: 600; font-size: 16px; }
+  .rf button[disabled] { opacity: .7; cursor: progress; }
+  .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+  .bars { display: grid; gap: 12px; }
+  .bar { display: grid; grid-template-columns: 130px 1fr 150px; gap: 12px; align-items: center; }
+  .bar .lb { font-family: "Kanit", sans-serif; font-weight: 600; color: var(--navy); }
+  .bar .tr { height: 22px; background: #f1edfc; border-radius: 999px; overflow: hidden; }
+  .bar .fl { height: 100%; border-radius: 999px; min-width: 6px; }
+  .bar .vl { font-family: "Kanit", sans-serif; font-weight: 600; color: var(--navy); }
+  .bar .vl small { display: block; font-family: "Sarabun", sans-serif; font-weight: 400; font-size: 13.5px; color: var(--muted); line-height: 1.3; }
+  .lvl-good { background: linear-gradient(90deg, #0ea877, #43d6a3); }
+  .lvl-watch { background: linear-gradient(90deg, #f08a0b, #fbbf46); }
+  .lvl-risk { background: linear-gradient(90deg, #e23b3b, #f77f7f); }
+
+  .sec { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px;
+         font-family: "Kanit", sans-serif; font-weight: 600; font-size: 21px; color: var(--navy); }
+  .sec .cnt { font-family: "Sarabun", sans-serif; font-weight: 400; font-size: 15px; color: var(--muted); }
+  .cases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .case { position: relative; overflow: hidden; }
+  .case::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; }
+  .case.pass::before { background: linear-gradient(180deg, #0ea877, #43d6a3); }
+  .case.fail::before { background: linear-gradient(180deg, #e23b3b, #f77f7f); }
+  .case-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+  .badge { display: inline-block; padding: 3px 14px; border-radius: 999px; color: #fff;
+           font-family: "Kanit", sans-serif; font-weight: 600; font-size: 14.5px; }
+  .tz { font-size: 14px; color: var(--muted); }
+  .case-id { margin-top: 10px; font-size: 16px; color: var(--muted); }
+  .case-id b { font-family: "Kanit", sans-serif; font-weight: 600; font-size: 21px; color: var(--navy); margin-right: 8px; }
+  .meta { font-size: 15px; color: #4b5563; margin-top: 2px; }
+  .icd { display: inline-block; background: #efe9ff; color: #5b3fd6; border-radius: 8px; padding: 0 8px;
+         font-family: "Kanit", sans-serif; font-weight: 600; font-size: 14px; }
+  .dispo { display: inline-block; margin-top: 8px; padding: 3px 12px; border-radius: 10px; font-size: 14.5px; line-height: 1.45; }
+  .dispo b { font-family: "Kanit", sans-serif; font-weight: 600; }
+  .d-admit { background: #efe9ff; color: #4c3aa8; }
+  .d-refer { background: #e0ecff; color: #1e3a8a; }
+  .d-home { background: #dcfce7; color: #14532d; }
+  .d-death { background: #e5e7eb; color: #1f2937; }
+  .d-refuse, .d-escape { background: #fff7d6; color: #78520a; }
+  .d-pending { background: #eef0f5; color: #475569; }
+  ul.els { list-style: none; margin: 12px 0 0; padding: 0; }
+  ul.els li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); }
+  ul.els .ico { width: 22px; text-align: center; flex: none; }
+  ul.els .lab { flex: 1; min-width: 0; font-size: 15.5px; line-height: 1.35; }
+  ul.els .lab small { display: block; font-size: 13.5px; color: var(--muted); }
+  ul.els .lab small.q { font-style: italic; color: #7c7aa0; overflow-wrap: anywhere; }
+  .empty { text-align: center; color: var(--muted); padding: 34px; }
+
+  /* ---------- SSC 2026 ---------- */
+  .sscard, .trendcard, .datacard { margin-top: 18px; }
+  .datacard .bar { grid-template-columns: 290px 1fr 110px; }
+  .ssc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 12px; }
+  .mini { border: 1.5px solid var(--line); border-radius: 16px; padding: 12px 14px; background: #fcfbff; }
+  .mini .t { font-family: "Kanit", sans-serif; font-weight: 600; font-size: 14.5px; color: var(--navy); }
+  .mini .v { font-family: "Kanit", sans-serif; font-weight: 600; font-size: 28px; line-height: 1.2; color: #4c3aa8; }
+  .mini .v small { font-size: 14px; color: var(--muted); margin-left: 4px; }
+  .mini .s { font-size: 13.5px; color: var(--muted); line-height: 1.4; }
+  .mini.good .v { color: #047857; } .mini.watch .v { color: #b45309; } .mini.risk .v { color: #b91c1c; }
+  .tscroll { overflow-x: auto; }
+  table.trend { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  .trend th { font-family: "Kanit", sans-serif; font-weight: 600; color: var(--navy); text-align: left;
+              padding: 6px 8px; border-bottom: 1.5px solid var(--line); white-space: nowrap; }
+  .trend td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+  .cell { display: flex; align-items: center; gap: 6px; min-width: 104px; }
+  .cell .tr { flex: 1; height: 10px; background: #f1edfc; border-radius: 99px; overflow: hidden; min-width: 44px; }
+  .cell .fl { height: 100%; border-radius: 99px; }
+  .cell b { font-family: "Kanit", sans-serif; font-weight: 600; min-width: 40px; text-align: right; }
+  .ssc-box { margin-top: 12px; padding: 10px 12px 2px; border-radius: 14px; background: #f8f6ff; border: 1px solid var(--line); }
+  .ssc-box .hd { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center;
+                 font-family: "Kanit", sans-serif; font-weight: 600; font-size: 14.5px; color: var(--navy); }
+  .tag { display: inline-block; padding: 1px 10px; border-radius: 999px; font-family: "Kanit", sans-serif;
+         font-weight: 600; font-size: 13.5px; }
+  .n2-high { background: #fee2e2; color: #b91c1c; } .n2-medium { background: #ffedd5; color: #b45309; }
+  .n2-low-medium { background: #fef3c7; color: #92400e; } .n2-low { background: #d1fae5; color: #047857; }
+  .tag.shock { background: #e23b3b; color: #fff; } .tag.noshock { background: #eef0f5; color: #475569; }
+  .vit { font-size: 13.5px; color: #4b5563; margin-top: 4px; }
+  .ssc-box ul.els { margin-top: 6px; }
+  .pp.warn { background: #ffedd5; color: #b45309; }
+  .pp.info { background: #efe9ff; color: #4c3aa8; }
+
+  @media (max-width: 900px) { .cases { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) {
+    .rf label { flex: 1 1 140px; }
+    .rf input { min-width: 0; width: 100%; }
+    .rf button { flex: 1 1 100%; }
+    .range .ch .set { margin-left: 0; }
+    .bar, .datacard .bar { grid-template-columns: 1fr auto; gap: 4px 10px; }
+    .bar .tr { grid-column: 1 / -1; grid-row: 2; }
+    .bar .vl { text-align: right; }
+    .bar .vl small { display: inline; margin-left: 4px; }
+  }
+</style>
+</head>
+<body>
+{% macro lvl(p) %}{{ 'good' if p >= 80 else ('watch' if p >= 50 else 'risk') }}{% endmacro %}
+{% macro grad(p) %}{{ 'g-green' if p >= 80 else ('g-orange' if p >= 50 else 'g-red') }}{% endmacro %}
+{% macro mlvl(r) %}{{ 'info' if not r.n else lvl(r.pct) }}{% endmacro %}
+{% macro rate_v(r) %}{% if r.n %}{{ r.pct }}<small>% · {{ r.ok }}/{{ r.n }} ราย</small>{% else %}–<small>ไม่มีเคสที่เข้าเกณฑ์</small>{% endif %}{% endmacro %}
+{% macro cell(r) %}<td title="{{ r.ok }}/{{ r.n }}">{% if r.n %}<div class="cell"><div class="tr"><div class="fl lvl-{{ lvl(r.pct) }}" style="width: {{ r.pct }}%"></div></div><b>{{ r.pct }}%</b></div>{% else %}–{% endif %}</td>{% endmacro %}
+{% macro row(state, label, sub=None, pill=None, pill_cls='na', quote=None) %}
+        <li>
+          <span class="ico">{% if state is sameas true %}✅{% elif state is sameas false %}❌{% elif state == 'warn' %}⚠️{% else %}➖{% endif %}</span>
+          <span class="lab">{{ label }}{% if sub %}<small>{{ sub }}</small>{% endif %}{% if quote %}<small class="q">“{{ quote }}”</small>{% endif %}</span>
+          {% if pill %}<span class="pp {{ pill_cls }}">{{ pill }}</span>{% endif %}
+        </li>
+{% endmacro %}
+<div class="page">
+  <header class="top">
+    <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="โลโก้{{ hospital }}">
+    <div class="ttl">
+      <h1>Sepsis Six Bundle</h1>
+      <span class="pill">⏱️ ครบใน 1 ชม. นับจากมาถึง ER</span>
+    </div>
+    <div class="chip">
+      <span class="a">{{ hospital }}</span>
+      <div class="b">อัปเดต {{ updated|thdt }}</div>
+    </div>
+  </header>
+
+  <section class="card range">
+    <div class="ch"><span class="ic">📅</span>ช่วงวันที่มาถึง ER
+      <small>{{ period }} · พบ {{ s.cases }} ราย</small>
+      <a class="btn set" href="{{ url_for('settings') }}">⚙️ ตั้งค่าแจ้งเตือน</a></div>
+    <form class="rf" method="get" action="{{ url_for('dashboard') }}">
+      <label>ตั้งแต่<input type="date" name="d1" value="{{ d1.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+      <label>ถึง<input type="date" name="d2" value="{{ d2.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+      <button type="submit">🔎 ดูเคส</button>
+    </form>
+    <div class="quick">
+      {% for label, q1, q2 in quick %}
+        <a class="btn {{ 'active' if (q1, q2) == (d1, d2) else '' }}"
+           href="{{ url_for('dashboard', d1=q1.isoformat(), d2=q2.isoformat()) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    {% if notice %}<div class="alert y"><span class="ai">⚠️</span><div>{{ notice }}</div></div>{% endif %}
+  </section>
+
+  <section class="kpis">
+    <div class="kpi g-purple">
+      <div class="e">🩺</div>
+      <div class="l">เคส Sepsis ในช่วงนี้</div>
+      <div class="v">{{ s.cases }}<small>ราย</small></div>
+      <div class="n">{% for icon, label, n in s.dispositions %}{{ label }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</div>
+    </div>
+    <div class="kpi {{ grad(s.passed_pct) }}">
+      <div class="e">🎯</div>
+      <div class="l">ทำครบ 4 ข้อใน 1 ชม.</div>
+      <div class="v">{{ s.passed }}<small>ราย</small></div>
+      <div class="n">{{ s.passed_pct }}% ของเคสทั้งหมด</div>
+    </div>
+    {% set atb = s.by_key.antibiotic %}
+    <div class="kpi {{ grad(atb.pct) }}">
+      <div class="e">💊</div>
+      <div class="l">ยาปฏิชีวนะภายใน 1 ชม.</div>
+      <div class="v">{{ atb.pct }}<small>%</small></div>
+      <div class="n">{{ atb.ok }} จาก {{ s.cases }} ราย</div>
+    </div>
+    {% set lac = s.by_key.lactate %}
+    <div class="kpi {{ grad(lac.pct) }}">
+      <div class="e">🧪</div>
+      <div class="l">Lactate ภายใน 1 ชม.</div>
+      <div class="v">{{ lac.pct }}<small>%</small></div>
+      <div class="n">{{ lac.ok }} จาก {{ s.cases }} ราย</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="ch"><span class="ic">📊</span>ทำได้ภายใน 60 นาที รายข้อ <small>ตัวหาร = เคสทั้งหมด {{ s.cases }} ราย</small></div>
+    {% if s.cases %}
+    <div class="bars">
+      {% for e in s.elements %}
+      <div class="bar">
+        <div class="lb">{{ e.label }}</div>
+        <div class="tr"><div class="fl lvl-{{ lvl(e.pct) }}" style="width: {{ e.pct }}%"></div></div>
+        <div class="vl">{{ e.ok }}/{{ s.cases }} · {{ e.pct }}%<small>พบคำสั่ง {{ e.found }} ราย</small></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">ยังไม่มีเคสในช่วงนี้</div>
+    {% endif %}
+    {% if s.culture_after_atb %}
+    <div class="alert r"><span class="ai">🚨</span><div><b>{{ s.culture_after_atb }} ราย</b> ให้ยาปฏิชีวนะก่อนเก็บ Hemoculture</div></div>
+    {% endif %}
+    <div class="alert b"><span class="ai">💡</span>
+      <div>เวลาให้ยา/สารน้ำ ใช้<b>เวลาที่พยาบาลบันทึกใน ER</b> (HPI) ก่อน ถ้าไม่มีจึงใช้<b>เวลาสั่ง</b>ใน HOSxP ·
+        ออกซิเจน/Urine Output อ่านจากบันทึกพยาบาลเช่นกัน ถ้าไม่พบต้องให้พยาบาลยืนยันเอง</div>
+    </div>
+  </section>
+
+  {% set x = s.ssc %}
+  <section class="card sscard">
+    <div class="ch"><span class="ic">🧭</span>ตัวชี้วัดตาม SSC 2026
+      <small>Surviving Sepsis Campaign 2026 · ไม่เปลี่ยนเกณฑ์ "ครบ 4 ข้อ" ด้านบน</small></div>
+    {% if s.cases %}
+    <div class="ssc-grid">
+      <div class="mini info"><div class="t">🫀 Shock / hypoperfusion</div>
+        <div class="v">{{ x.shock }}<small>จาก {{ s.cases }} ราย</small></div>
+        <div class="s">R57.2 · SBP &lt; 90 · MAP &lt; 65 · Lactate ≥ 4 · ได้ยากระตุ้นความดัน</div></div>
+      <div class="mini {{ mlvl(x.atb_shock) }}"><div class="t">💊 ยาปฏิชีวนะ — shock ≤ 1 ชม.</div>
+        <div class="v">{{ rate_v(x.atb_shock) }}</div><div class="s">Rec 16 (strong)</div></div>
+      <div class="mini {{ mlvl(x.atb_nonshock) }}"><div class="t">💊 ยาปฏิชีวนะ — ไม่ shock ≤ 3 ชม.</div>
+        <div class="v">{{ rate_v(x.atb_nonshock) }}</div><div class="s">Rec 18 · ถ้าค่อนข้างแน่ใจว่าเป็น sepsis ควรภายใน 1 ชม. (Rec 17)</div></div>
+      <div class="mini {{ mlvl(x.lactate_repeat) }}"><div class="t">🧪 วัด Lactate ซ้ำ ≤ {{ lac_h }} ชม.</div>
+        <div class="v">{{ rate_v(x.lactate_repeat) }}</div><div class="s">เคสที่ค่าแรก &gt; 2 · ค่าแรก ≥ 4 มี {{ x.lactate_very_high }} ราย (Rec 51)</div></div>
+      <div class="mini {{ mlvl(x.fluid_30) }}"><div class="t">💧 สารน้ำ ≥ 30 mL/kg ใน 3 ชม.</div>
+        <div class="v">{{ rate_v(x.fluid_30) }}</div><div class="s">เคส shock · นับ load ที่พยาบาลบันทึก (Rec 10, conditional)</div></div>
+      <div class="mini info"><div class="t">🧴 ใช้ balanced crystalloid</div>
+        <div class="v">{{ rate_v(x.balanced) }}</div><div class="s">RLS / Acetar ในเคสที่ระบุชนิดสารน้ำได้ (Rec 44, conditional)</div></div>
+      <div class="mini info"><div class="t">💉 ยากระตุ้นความดันในเคส shock</div>
+        <div class="v">{{ rate_v(x.vaso_given) }}</div>
+        <div class="s">Norepinephrine เป็นตัวแรก {{ x.ne_first.ok }}/{{ x.ne_first.n }}{% if x.dopamine_first %} · ⚠️ ใช้ dopamine ก่อน {{ x.dopamine_first }} ราย{% endif %} (Rec 53)</div></div>
+      <div class="mini info"><div class="t">🚑 Refer / ICU ≤ 6 ชม.</div>
+        <div class="v">{{ rate_v(x.escalation) }}</div><div class="s">เคส shock (Rec 15, conditional) · admit หอผู้ป่วยไม่นับ</div></div>
+      <div class="mini info"><div class="t">📟 NEWS2 แรกรับ</div>
+        <div class="v">{{ x.news2_high }}<small>ราย ≥ 7</small></div>
+        <div class="s">5–6 คะแนน {{ x.news2_medium }} ราย · คำนวณจากข้อมูลที่มี (Rec 4)</div></div>
+    </div>
+    <div class="alert b"><span class="ai">💡</span>
+      <div>ปริมาณสารน้ำนับจาก <b>load ที่พยาบาลเขียนใน ER</b> (ไม่นับ rate คงที่) · NEWS2 คำนวณจากชีพจรแรกรับ + SpO₂/O₂ ในบันทึก
+        ถ้า ER ยังไม่บันทึกความรู้สึกตัว คะแนนจริงอาจสูงกว่านี้ · ตัวเลขเป็นข้อมูลพัฒนาคุณภาพ ไม่ใช่การตัดสินทางคลินิก</div></div>
+    {% else %}<div class="empty">ยังไม่มีเคสในช่วงนี้</div>{% endif %}
+  </section>
+
+  <section class="card trendcard">
+    <div class="ch"><span class="ic">📈</span>แนวโน้มรายเดือน <small>ตามเดือนที่มาถึง ER · ใช้ในการประชุม PCT</small></div>
+    {% if s.monthly|length >= 2 %}
+    <div class="tscroll"><table class="trend">
+      <thead><tr><th>เดือน</th><th>เคส</th><th>shock</th><th>ครบ 4 ข้อ</th><th>ยา ≤ 1 ชม.</th>
+        <th>ยาตามเป้า SSC</th><th>H/C ก่อนยา</th><th>Lactate ≤ 1 ชม.</th></tr></thead>
+      <tbody>
+      {% for m in s.monthly %}
+        <tr><td><b>{{ m.label }}</b></td><td>{{ m.n }}</td><td>{{ m.shock }}</td>
+          {{ cell(m.passed) }}{{ cell(m.atb60) }}{{ cell(m.atb_ssc) }}{{ cell(m.culture_first) }}{{ cell(m.lactate60) }}</tr>
+      {% endfor %}
+      </tbody></table></div>
+    <div class="vit">"ยาตามเป้า SSC" = shock ≤ 1 ชม. / ไม่ shock ≤ 3 ชม. · "H/C ก่อนยา" ตัวหาร = เคสที่พบทั้ง H/C และยาปฏิชีวนะ</div>
+    {% else %}
+    <div class="empty" style="padding: 16px">เลือกช่วงตั้งแต่ 2 เดือนขึ้นไป (เช่นปุ่ม "ปีงบนี้") เพื่อดูแนวโน้ม</div>
+    {% endif %}
+  </section>
+
+  <section class="card datacard">
+    <div class="ch"><span class="ic">🗃️</span>ความครบถ้วนของข้อมูลใน HOSxP <small>ยิ่งบันทึกครบ ตัวเลขยิ่งแม่น</small></div>
+    {% if s.cases %}
+    <div class="bars">
+      {% for c in s.completeness %}
+      <div class="bar">
+        <div class="lb" style="font-size: 14.5px; font-weight: 400">{{ c.label }}</div>
+        <div class="tr"><div class="fl lvl-{{ lvl(c.pct) }}" style="width: {{ c.pct }}%"></div></div>
+        <div class="vl">{{ c.pct }}%<small>{{ c.ok }}/{{ c.n }} ราย</small></div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="alert y"><span class="ai">📝</span>
+      <div>รายการที่ได้ 0% ส่วนใหญ่ <b>HOSxP มีช่องให้กรอกอยู่แล้ว</b> (เวลา triage, เวลารับรู้ sepsis, ระดับความรู้สึกตัว, NEWS2, SpO₂)
+        ถ้า ER เริ่มกรอก ระบบจะใช้ค่านั้นทันทีโดยไม่ต้องแก้โปรแกรม</div></div>
+    {% endif %}
+  </section>
+
+  <div class="sec">🗂️ รายเคส <span class="cnt">{{ period }} · {{ s.cases }} ราย · เรียงจากมาถึง ER ล่าสุด</span></div>
+  {% if not results %}
+  <div class="card empty">ไม่พบเคสที่มี ICD10 A40.x / A41.x / R57.2 ในช่วง {{ period }}</div>
+  {% endif %}
+  <div class="cases">
+    {% for r in results %}
+    {% set ok = namespace(n=0) %}
+    {% for k in ['lactate', 'culture', 'antibiotic', 'iv_fluid'] %}{% if r.elements[k].compliant %}{% set ok.n = ok.n + 1 %}{% endif %}{% endfor %}
+    <article class="card case {{ 'pass' if r.auto_compliant else 'fail' }}">
+      <div class="case-top">
+        <span class="badge {{ 'g-green' if r.auto_compliant else 'g-red' }}">
+          {{ '✅ ผ่านครบ 4/4' if r.auto_compliant else '⚠️ ผ่าน ' ~ ok.n ~ '/4 ข้อ' }}</span>
+        <span class="tz">เริ่มนับ ({{ r.time_zero_mode }}) {{ r.time_zero|thdt }}</span>
+      </div>
+      <div class="case-id"><b>{{ 'AN' if r.an else 'VN' }} {{ r.case_key }}</b>HN {{ r.hn }}</div>
+      <div class="meta">{{ r.ward_name or '-' }}{% if r.bed %} · เตียง {{ r.bed }}{% endif %} ·
+        {% for code in (r.icd10 or '').split(', ') if code %}<span class="icd">{{ code }}</span> {% endfor %}</div>
+      {% set d = r.disposition %}
+      <div class="dispo d-{{ d.code }}">{{ d.icon }} <b>{{ d.label }}</b>
+        {%- if d.code == 'refer' %} → {{ d.detail or 'ไม่ระบุ รพ.ปลายทาง' }}{% endif %}
+        {%- if d.at %} · {{ d.at[11:] }} น.{% if d.elapsed_min is not none %} ({{ d.elapsed_min }} นาทีหลังเข้า ER){% endif %}{% endif %}</div>
+      <ul class="els">
+        {% for el in r.elements.values() %}
+        <li>
+          <span class="ico">{% if el.compliant is sameas true %}✅{% elif el.compliant is sameas false %}❌{% else %}➖{% endif %}</span>
+          <span class="lab">{{ el.label }}
+            {% if el.source and el.at %}<small>{{ el.source }} · {{ el.at[11:] }} น.</small>
+            {% elif el.compliant is not none and el.note %}<small>{{ el.note }}</small>{% endif %}
+            {% if el.detail %}<small class="q">“{{ el.detail }}”</small>{% endif %}</span>
+          {% if el.elapsed_min is not none %}
+            <span class="pp {{ 'ok' if el.compliant else 'bad' }}">{{ el.elapsed_min }} นาที</span>
+          {% elif el.compliant is none %}
+            <span class="pp na">ยืนยันเอง</span>
+          {% elif el.compliant %}
+            <span class="pp ok">ผ่าน</span>
+          {% else %}
+            <span class="pp bad">ไม่พบ</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% if r.culture_before_antibiotic is sameas false %}
+      <div class="alert r"><span class="ai">🚨</span><div>ให้ยาปฏิชีวนะก่อนเก็บ Hemoculture</div></div>
+      {% endif %}
+      {% set c = r.ssc %}{% set v = c.vitals %}
+      <div class="ssc-box">
+        <div class="hd">🧭 SSC 2026
+          {% if c.news2 %}<span class="tag n2-{{ c.news2.band }}">NEWS2 {{ c.news2.score }}{{ '+' if c.news2.partial }} · {{ c.news2.label }}</span>{% endif %}
+          {% if c.shock %}<span class="tag shock">Shock: {{ c.shock_reasons|join(' · ') }}</span>
+          {% else %}<span class="tag noshock">ไม่เข้าเกณฑ์ shock</span>{% endif %}
+        </div>
+        <div class="vit">BP {{ v.sbp|n }}/{{ v.dbp|n }} · HR {{ v.hr|n }} · RR {{ v.rr|n }} · T {{ v.temp|n }} ·
+          SpO₂ {{ v.spo2|n }}{{ '%' if v.spo2 }} · น้ำหนัก {{ v.weight|n }} kg
+          {%- if c.news2 and c.news2.partial %} · NEWS2 ไม่มีข้อมูล: {{ c.news2.missing|join(', ') }}{% endif %}</div>
+        <ul class="els">
+          {% set l = c.lactate %}
+          {% if l.value is not none %}
+            {{ row(true if l.level == 'normal' else 'warn', 'ค่า Lactate แรก',
+                   {'normal': 'ปกติ (≤ 2)', 'high': 'สูง (> 2) — ควรวัดซ้ำ', 'very_high': 'สูงมาก (≥ 4) — hypoperfusion'}[l.level],
+                   (l.value|n) ~ ' mmol/L', {'normal': 'ok', 'high': 'warn', 'very_high': 'bad'}[l.level]) }}
+          {% endif %}
+          {% if l.repeat_needed %}
+            {{ row(l.repeat_ok, 'วัด Lactate ซ้ำภายใน ' ~ lac_h ~ ' ชม.',
+                   ('ครั้งที่ 2 ' ~ (l.repeat_at|thdt) ~ ' · ค่า ' ~ (l.repeat_value|n)) if l.repeat_at else 'ไม่พบการสั่งตรวจซ้ำใน 24 ชม.',
+                   ((l.repeat_elapsed // 60) ~ ' ชม. ' ~ (l.repeat_elapsed % 60) ~ ' นาที') if l.repeat_at else 'ไม่พบ',
+                   'ok' if l.repeat_ok else 'bad') }}
+          {% endif %}
+          {% set a = c.atb %}
+          {{ row(a.ok, 'ยาปฏิชีวนะตามเป้า SSC (≤ ' ~ (a.target_min // 60) ~ ' ชม.)',
+                 'เคส shock: ภายใน 1 ชม.' if c.shock else 'ไม่ shock: ภายใน 3 ชม.',
+                 (a.elapsed_min ~ ' นาที') if a.elapsed_min is not none else 'ไม่พบ', 'ok' if a.ok else 'bad') }}
+          {% set f = c.fluid %}
+          {% if f.applies %}
+            {% if f.target_ml %}
+              {{ row(true if f.met else 'warn', 'สารน้ำ ≥ 30 mL/kg ใน 3 ชม.',
+                     'load ที่บันทึก ' ~ (f.given_ml|ml) ~ ' / เป้า ' ~ (f.target_ml|ml) ~ ' mL (' ~ (f.weight|n) ~ ' kg) · ประเมินซ้ำเสมอ',
+                     (f.pct ~ '%') if f.pct is not none else 'ไม่พบ load', 'ok' if f.met else 'warn') }}
+            {% else %}
+              {{ row(none, 'สารน้ำ ≥ 30 mL/kg ใน 3 ชม.', 'ไม่มีน้ำหนักใน HOSxP — คำนวณเป้าไม่ได้') }}
+            {% endif %}
+          {% endif %}
+          {% if f.types %}
+            {{ row(none, 'ชนิดสารน้ำ', 'balanced (RLS/Acetar) แนะนำมากกว่า NSS (Rec 44)',
+                   f.types|map('replace', 'balanced', 'Balanced')|map('replace', 'saline', 'NSS')|join(' + '), 'info') }}
+          {% endif %}
+          {% set p = c.vasopressor %}
+          {% if p %}
+            {{ row(true if p.ne_first else ('warn' if p.ne_first is sameas false else none), 'ยากระตุ้นความดัน: ' ~ p.agent,
+                   (p.source ~ ' · ' ~ p.at[11:] ~ ' น.') if p.at else p.source,
+                   (p.elapsed_min ~ ' นาที') if p.elapsed_min is not none else 'ไม่ระบุเวลา',
+                   'warn' if p.ne_first is sameas false else 'info', p.detail) }}
+          {% elif c.shock %}
+            {{ row(none, 'ยากระตุ้นความดัน', 'ไม่พบการให้ (อาจตอบสนองต่อสารน้ำ)', '—') }}
+          {% endif %}
+          {% set e = c.escalation %}
+          {% if e.applies %}
+            {{ row(e.ok, 'Refer / ICU ภายใน 6 ชม.', e.note,
+                   (e.elapsed_min ~ ' นาที') if e.elapsed_min is not none else '—',
+                   'ok' if e.ok else ('bad' if e.ok is sameas false else 'na')) }}
+          {% endif %}
+        </ul>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+  // ช่วงยาวใช้เวลาโหลดหลายวินาที — บอกผู้ใช้ว่ากำลังทำงาน ไม่ให้กดซ้ำ
+  document.querySelector(".rf").addEventListener("submit", function (e) {
+    var b = e.target.querySelector("button"); b.disabled = true; b.textContent = "⏳ กำลังโหลด…";
+  });
+  document.querySelectorAll(".quick a").forEach(function (a) {
+    a.addEventListener("click", function () { a.textContent = "⏳ " + a.textContent; });
+  });
+</script>
+
+<footer class="foot">
+  <svg class="wave" viewBox="0 0 1920 70" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 40 C 400 0, 800 70, 1200 30 S 1700 10, 1920 35 L1920 70 L0 70Z" fill="#8b6cf0" opacity=".18"/>
+    <path d="M0 55 C 500 25, 900 75, 1400 45 S 1800 40, 1920 50 L1920 70 L0 70Z" fill="#6d4ee8" opacity=".22"/>
+  </svg>
+  <div class="txt"><span>{{ hospital }} · ระบบติดตาม Sepsis Six Bundle</span><span>ข้อมูลจาก HOSxP</span></div>
+</footer>
+</body>
+</html>

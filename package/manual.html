@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>คู่มือ Sepsis Six Bundle</title>
+<style>
+@font-face { font-family: 'Sarabun'; font-weight: 400; src: url('../static/fonts/Sarabun-Regular.ttf'); }
+@font-face { font-family: 'Sarabun'; font-weight: 600; src: url('../static/fonts/Sarabun-SemiBold.ttf'); }
+@font-face { font-family: 'Sarabun'; font-weight: 700; src: url('../static/fonts/Sarabun-Bold.ttf'); }
+@font-face { font-family: 'Kanit'; font-weight: 600; src: url('../static/fonts/Kanit-SemiBold.ttf'); }
+@page { size: A4; margin: 16mm 15mm 16mm; }
+:root { --ink:#2b2b55; --muted:#6b6497; --purple:#6d4ee8; --line:#e6e0fa; --soft:#f5f2ff; }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); background: #fff; font-family: 'Sarabun', sans-serif; font-size: 11.5pt; line-height: 1.6; }
+h1, h2, h3 { font-family: 'Kanit', sans-serif; font-weight: 600; line-height: 1.25; }
+h2 { font-size: 17pt; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; color: #3a2a9a;
+     break-after: avoid; }
+h2 .n { flex: none; width: 34px; height: 34px; border-radius: 50%; color: #fff; font-size: 14pt;
+        display: grid; place-items: center; background: linear-gradient(135deg, #6d4ee8, #a47bf7); }
+h3 { font-size: 13pt; margin: 16px 0 6px; color: #2e2a78; break-after: avoid; }
+section { break-before: page; }
+section.flow { break-before: auto; margin-top: 26px; }
+p { margin: 6px 0; }
+ul, ol { margin: 6px 0; padding-left: 22px; }
+li { margin: 2px 0; }
+code { font-family: Consolas, 'Courier New', monospace; font-size: 9.5pt; background: var(--soft);
+       border-radius: 4px; padding: 1px 5px; color: #4527a0; }
+pre { font-family: Consolas, 'Courier New', monospace; font-size: 9.3pt; line-height: 1.5;
+      background: #1f1b3a; color: #ece8ff; border-radius: 10px; padding: 10px 14px; margin: 8px 0;
+      white-space: pre-wrap; word-break: break-all; break-inside: avoid; }
+pre .c { color: #a99fd8; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10.5pt; break-inside: auto; }
+th, td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 700; color: #2e2a78; }
+tr { break-inside: avoid; }
+.box { border-radius: 12px; padding: 10px 14px; margin: 10px 0; break-inside: avoid; }
+.info { background: #eef4ff; border: 1px solid #c7d8fb; }
+.warn { background: #fff4e5; border: 1px solid #fbd38d; }
+.danger { background: #fff0f0; border: 1px solid #f9b4b4; }
+.ok { background: #ebfbf3; border: 1px solid #a7e8c8; }
+.box b:first-child { font-weight: 700; }
+.shot { width: 100%; border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; break-inside: avoid; }
+.cap { text-align: center; color: var(--muted); font-size: 9.5pt; margin-top: -2px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+.tile { border-radius: 14px; padding: 12px; color: #fff; break-inside: avoid; }
+.tile h3 { color: #fff; margin: 0 0 4px; font-size: 12.5pt; }
+.tile p { font-size: 10pt; margin: 0; }
+.t1 { background: linear-gradient(135deg, #6d4ee8, #a47bf7); }
+.t2 { background: linear-gradient(135deg, #f08a0b, #fbbf46); }
+.t3 { background: linear-gradient(135deg, #0ea877, #43d6a3); }
+.flowline { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 10pt; }
+.flowline div { flex: 1; text-align: center; border: 2px solid var(--line); border-radius: 12px; padding: 8px 6px; background: var(--soft); }
+.flowline span { color: var(--purple); font-weight: 700; }
+.steps { counter-reset: s; list-style: none; padding: 0; }
+.steps > li { position: relative; padding-left: 34px; margin: 8px 0; }
+.steps > li::before { counter-increment: s; content: counter(s); position: absolute; left: 0; top: 1px;
+  width: 24px; height: 24px; border-radius: 50%; background: var(--purple); color: #fff; font-weight: 700;
+  font-size: 10pt; display: grid; place-items: center; }
+.check li { list-style: "☐  "; }
+/* ปก */
+.cover { height: 262mm; display: flex; flex-direction: column; justify-content: center; text-align: center;
+  background: radial-gradient(500px 400px at 90% 5%, #e4dbff, transparent 70%),
+              radial-gradient(500px 400px at 5% 95%, #dbe8ff, transparent 70%), #faf8ff;
+  border-radius: 20px; padding: 30px; }
+.cover img { width: 120px; margin: 0 auto 16px; }
+.cover h1 { font-size: 34pt; margin: 0; background: linear-gradient(90deg, #3a2a9a, #7c4dff 60%, #c04fd6);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.cover .sub { font-size: 15pt; color: #2e2a78; margin: 6px 0 22px; font-weight: 600; }
+.cover .pill { display: inline-block; margin: 3px; padding: 4px 14px; border-radius: 99px; background: #fff;
+  border: 1px solid var(--line); color: #4527a0; font-weight: 600; font-size: 10.5pt; }
+.cover .meta { margin-top: 40px; color: var(--muted); font-size: 11pt; }
+.toc { columns: 2; column-gap: 24px; font-size: 11pt; }
+.toc div { break-inside: avoid; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+</style>
+</head>
+<body>
+
+<!-- ======================================================== ปก -->
+<div class="cover">
+  <img src="logo.png" alt="">
+  <h1>Sepsis Six Bundle</h1>
+  <div class="sub">ระบบติดตามและแจ้งเตือนผู้ป่วย Sepsis จาก HOSxP<br>คู่มือติดตั้งและใช้งานสำหรับโรงพยาบาล</div>
+  <div>
+    <span class="pill">ดึงเคสอัตโนมัติจาก ICD10</span>
+    <span class="pill">วิเคราะห์ bundle ภายใน 1 ชม.</span>
+    <span class="pill">แจ้งเตือนกลุ่ม LINE ผ่าน MOPH Notify</span>
+  </div>
+  <div class="meta">เวอร์ชัน {{VERSION}} · {{DATE}}<br>พัฒนาโดย โรงพยาบาลวังน้ำเขียว จังหวัดนครราชสีมา<br>ติดต่อ: นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว โทร 086-257-4817</div>
+</div>
+
+<!-- ======================================================== สารบัญ -->
+<section>
+  <h2>สารบัญ</h2>
+  <div class="toc">
+    <div>1. ระบบนี้ทำอะไร</div>
+    <div>2. สิ่งที่ต้องเตรียม</div>
+    <div>3. สร้าง user ฐานข้อมูลแบบอ่านอย่างเดียว</div>
+    <div>4. ติดตั้งบน Linux</div>
+    <div>5. ติดตั้งบน Windows</div>
+    <div>6. ตรวจรหัสรายการของโรงพยาบาล</div>
+    <div>7. ตั้งค่าแจ้งเตือน MOPH Notify</div>
+    <div>8. ใส่โลโก้และชื่อโรงพยาบาล</div>
+    <div>9. การใช้งานแดชบอร์ด</div>
+    <div>10. ตัวชี้วัด SSC 2026 แนวโน้ม และความครบถ้วนข้อมูล</div>
+    <div>11. หน้าต่างเตือนสงสัย Sepsis ใน HOSxP</div>
+    <div>12. การแจ้งเตือนในกลุ่ม LINE</div>
+    <div>13. เกณฑ์และแหล่งข้อมูล</div>
+    <div>14. แนวทางบันทึกของพยาบาล ER</div>
+    <div>15. ค่าตั้งค่าใน .env ทั้งหมด</div>
+    <div>16. ความปลอดภัยและความเป็นส่วนตัว</div>
+    <div>17. ดูแลระบบ อัปเดต และถอนการติดตั้ง</div>
+    <div>18. แก้ปัญหาที่พบบ่อย</div>
+    <div>19. ข้อจำกัดที่ควรรู้</div>
+  </div>
+
+  <h3>ไฟล์ในชุดติดตั้ง</h3>
+  <table>
+    <tr><th style="width:34%">ไฟล์</th><th>ใช้ทำอะไร</th></tr>
+    <tr><td><code>install.sh</code></td><td>สคริปต์ติดตั้งบน Linux (AlmaLinux / Rocky / RHEL 8-9, Ubuntu 20.04+)</td></tr>
+    <tr><td><code>install_windows.bat</code></td><td>สคริปต์ติดตั้งบน Windows 10/11 หรือ Windows Server 2016+ (ดับเบิลคลิก)</td></tr>
+    <tr><td><code>setup_check.py</code></td><td>ตรวจการเชื่อมต่อ HOSxP และค้นหารหัส lab/ยาของโรงพยาบาล</td></tr>
+    <tr><td><code>.env.example</code></td><td>แม่แบบไฟล์ตั้งค่า (สคริปต์ติดตั้งสร้าง <code>.env</code> ให้)</td></tr>
+    <tr><td><code>app.py</code>, <code>queries.py</code>, <code>scheduler.py</code> ฯลฯ</td><td>ตัวโปรแกรม (Python / Flask)</td></tr>
+    <tr><td><code>static/logo.png</code></td><td>โลโก้กลาง เปลี่ยนเป็นโลโก้ของโรงพยาบาลได้ (หัวข้อ 8)</td></tr>
+    <tr><td><code>คู่มือ-Sepsis-Six-Bundle.pdf</code></td><td>คู่มือเล่มนี้</td></tr>
+  </table>
+</section>
+
+<!-- ======================================================== 1 -->
+<section>
+  <h2><span class="n">1</span>ระบบนี้ทำอะไร</h2>
+  <p>ระบบอ่านข้อมูลจาก HOSxP ทุก 15 นาที หาผู้ป่วยที่ได้รับการวินิจฉัย sepsis แล้วตรวจว่าทำ Sepsis Six Bundle ครบภายใน 1 ชั่วโมงหรือไม่
+     นับจากเวลาที่มาถึง ER ผลแสดงบนแดชบอร์ดในวง LAN และแจ้งเข้ากลุ่ม LINE ของทีม</p>
+  <div class="grid3">
+    <div class="tile t1"><h3>🔎 ดึงเคสเอง</h3><p>visit ที่มี ICD10 A40.x, A41.x หรือ R57.2 ทั้งที่ ER/OPD และหลัง admit รวมเคสที่ refer หรือจบที่ ER</p></div>
+    <div class="tile t2"><h3>⏱️ วิเคราะห์ bundle</h3><p>Lactate, Hemoculture, ยาปฏิชีวนะ, IV fluid ภายใน 60 นาที พร้อมดู O₂ และ Urine output จากบันทึกพยาบาล</p></div>
+    <div class="tile t3"><h3>📣 แจ้งเตือน LINE</h3><p>การ์ด "พบเคสใหม่" พร้อมเวลาที่เหลือ และการ์ดสรุปผลหลังครบเวลา ไม่มีชื่อผู้ป่วยในข้อความ</p></div>
+  </div>
+  <div class="flowline">
+    <div><b>HOSxP</b><br>MariaDB/MySQL<br>(อ่านอย่างเดียว)</div><span>→</span>
+    <div><b>เครื่องติดตั้งระบบ</b><br>Linux หรือ Windows<br>ในวง LAN ของ รพ.</div><span>→</span>
+    <div><b>MOPH Notify</b><br>(หมอพร้อม)<br>https ออกอินเทอร์เน็ต</div><span>→</span>
+    <div><b>กลุ่ม LINE</b><br>ของทีม ER/หอผู้ป่วย</div>
+  </div>
+  <p>ผู้ใช้ในโรงพยาบาลเปิดแดชบอร์ดผ่านเบราว์เซอร์ที่ <code>http://&lt;IP เครื่อง&gt;:5800/</code></p>
+  <img class="shot" src="img/dash_top.png" alt="">
+  <div class="cap">หน้าแดชบอร์ด (ข้อมูลตัวอย่าง)</div>
+</section>
+
+<!-- ======================================================== 2 -->
+<section>
+  <h2><span class="n">2</span>สิ่งที่ต้องเตรียม</h2>
+  <table>
+    <tr><th style="width:26%">รายการ</th><th>รายละเอียด</th></tr>
+    <tr><td>เครื่องติดตั้ง</td><td>เครื่องใดก็ได้ในวง LAN ที่เปิดตลอด 24 ชม. และต่อถึงฐานข้อมูล HOSxP ได้ เช่น เซิร์ฟเวอร์ Linux หรือ PC Windows
+      สเปกขั้นต่ำ 2 CPU, RAM 2 GB, พื้นที่ว่าง 1 GB · <b>แนะนำ Linux</b> เพราะทำงานเป็น service เสถียรกว่า</td></tr>
+    <tr><td>Python</td><td>เวอร์ชัน 3.9 ขึ้นไป (Linux: <code>dnf install python3.11</code> หรือ <code>apt install python3 python3-venv</code> ·
+      Windows: ติดตั้งจาก python.org และติ๊ก <i>Add python.exe to PATH</i>)</td></tr>
+    <tr><td>ฐานข้อมูล HOSxP</td><td>HOSxP v3 (MariaDB/MySQL) · ขอ user แบบ <b>SELECT อย่างเดียว</b> (หัวข้อ 3) · ถ้ามีเครื่อง replica (slave) แนะนำให้ต่อเครื่องนั้น</td></tr>
+    <tr><td>อินเทอร์เน็ตขาออก</td><td>เครื่องติดตั้งต้องออก https ได้ไปที่ <code>pypi.org</code> (ตอนติดตั้งไลบรารี) และ <code>morpromt2f.moph.go.th</code> (ส่งแจ้งเตือน)
+      ไม่ต้องเปิดพอร์ตขาเข้าจากอินเทอร์เน็ต</td></tr>
+    <tr><td>กลุ่ม LINE + MOPH Notify</td><td>Admin หน่วยบริการของ รพ. ใน CMS MOPH Notify เพื่ออนุมัติกลุ่ม (หัวข้อ 7)</td></tr>
+    <tr><td>รหัสหน่วยบริการ</td><td>รหัส 5 หลักของ รพ. ใช้ตั้งชื่อกลุ่ม LINE</td></tr>
+    <tr><td>เวลาเครื่อง</td><td>time zone <code>Asia/Bangkok</code> และเวลาตรงกับเครื่องฐานข้อมูล</td></tr>
+  </table>
+  <h3>ทีมที่ควรร่วมตั้งระบบ</h3>
+  <ul>
+    <li><b>IT / ผู้ดูแล HOSxP</b> — สร้าง user ฐานข้อมูล ติดตั้งระบบ ตรวจรหัสรายการ</li>
+    <li><b>พยาบาล ER / ทีม sepsis</b> — ทวนผลในแดชบอร์ดกับเวชระเบียน 1-2 สัปดาห์แรก และกำหนดวิธีบันทึกเวลา (หัวข้อ 14)</li>
+    <li><b>ห้องยา / ห้อง lab</b> — ยืนยันรหัสยาปฏิชีวนะ สารน้ำ Lactate และ Hemoculture</li>
+  </ul>
+</section>
+
+<!-- ======================================================== 3 -->
+<section class="flow">
+  <h2><span class="n">3</span>สร้าง user ฐานข้อมูลแบบอ่านอย่างเดียว</h2>
+  <p>ให้ผู้ดูแล HOSxP รันคำสั่งนี้บนเครื่องฐานข้อมูล (เปลี่ยน IP และรหัสผ่านเป็นของ รพ.) ระบบไม่เขียนข้อมูลใด ๆ ลง HOSxP</p>
+<pre><span class="c">-- IP ของเครื่องที่จะติดตั้งระบบ เช่น 192.168.1.50 · ตั้งรหัสผ่านใหม่ที่คาดเดายาก</span>
+CREATE USER 'sepsis_ro'@'192.168.1.50' IDENTIFIED BY 'ตั้งรหัสผ่านเอง';
+GRANT SELECT ON hos.* TO 'sepsis_ro'@'192.168.1.50';
+FLUSH PRIVILEGES;</pre>
+  <div class="box warn"><b>อย่าใช้ user ที่เขียนได้ (เช่น sa / root ของ HOSxP)</b> — ถ้าเครื่องติดตั้งถูกเจาะ ข้อมูลใน HOSxP จะไม่ถูกแก้</div>
+  <p>ถ้าระบบติดตั้งบนเครื่องเดียวกับฐานข้อมูล ใช้ <code>'sepsis_ro'@'localhost'</code> และ DB host <code>127.0.0.1</code></p>
+</section>
+
+<!-- ======================================================== 4 -->
+<section>
+  <h2><span class="n">4</span>ติดตั้งบน Linux</h2>
+  <ol class="steps">
+    <li>คัดลอกไฟล์ zip ไปที่เครื่อง (เช่นใช้ WinSCP หรือคำสั่ง <code>scp</code>)</li>
+    <li>เข้าเครื่องด้วย SSH แล้วแตกไฟล์และรันสคริปต์ติดตั้ง
+<pre>unzip sepsis_bundle_v{{VERSION}}.zip
+cd sepsis_bundle_v{{VERSION}}
+sudo bash install.sh</pre>
+      ต้องการพอร์ตอื่นที่ไม่ใช่ 5800 ให้รัน <code>sudo PORT=5900 bash install.sh</code></li>
+    <li>ตอบคำถาม: ชื่อโรงพยาบาล, DB host, port, ชื่อฐานข้อมูล (ปกติ <code>hos</code>), DB user และรหัสผ่าน (พิมพ์แล้วไม่แสดงบนจอ)</li>
+    <li>รอสคริปต์ทำงานจนขึ้น <b>ติดตั้งเสร็จแล้ว</b> พร้อมลิงก์แดชบอร์ด</li>
+  </ol>
+  <h3>สคริปต์ทำอะไรให้บ้าง</h3>
+  <table>
+    <tr><th style="width:8%">ขั้น</th><th>งาน</th></tr>
+    <tr><td>1</td><td>หา Python 3.9+ และเตือนถ้า time zone ไม่ใช่ Asia/Bangkok</td></tr>
+    <tr><td>2</td><td>สร้าง user ระบบ <code>sepsis</code> (ไม่มีสิทธิ์ล็อกอิน) และคัดลอกโปรแกรมไปที่ <code>/opt/sepsis_bundle</code></td></tr>
+    <tr><td>3</td><td>สร้าง <code>.env</code> จากคำตอบ (สิทธิ์ 600 อ่านได้เฉพาะ user sepsis)</td></tr>
+    <tr><td>4</td><td>สร้าง virtualenv และติดตั้งไลบรารี (Flask, PyMySQL, gunicorn ฯลฯ)</td></tr>
+    <tr><td>5</td><td>รัน <code>setup_check.py --write</code> ตรวจฐานข้อมูลและเติมรหัส lab/ยาลง <code>.env</code> (หัวข้อ 6) — ถ้าต่อฐานข้อมูลไม่ได้จะหยุดตรงนี้</td></tr>
+    <tr><td>6</td><td>ตั้ง systemd service <code>sepsis-bundle</code> (gunicorn) ให้เปิดเองตอนบูต</td></tr>
+    <tr><td>7</td><td>ตั้ง cron <code>/etc/cron.d/sepsis-bundle</code> รัน <code>scheduler.py</code> ทุก 15 นาที และเปิดพอร์ตใน firewalld/ufw</td></tr>
+    <tr><td>8</td><td>ตรวจว่า service ทำงานและหน้าเว็บตอบสนอง</td></tr>
+  </table>
+  <div class="box info"><b>รันซ้ำได้ปลอดภัย</b> — ใช้คำสั่งเดิมตอนอัปเดตเวอร์ชันได้เลย สคริปต์ไม่ทับ <code>.env</code>, โฟลเดอร์ <code>data/</code> (ค่า MOPH Notify, ประวัติการแจ้งเตือน) และโลโก้ที่เปลี่ยนไว้</div>
+  <div class="box warn"><b>SELinux:</b> ระบบรันจาก <code>/opt</code> ผ่าน systemd ซึ่งใช้ได้ตามค่าปกติของ AlmaLinux/Rocky ถ้าบังคับนโยบายเข้มกว่าปกติ ให้ดู <code>journalctl -u sepsis-bundle</code></div>
+</section>
+
+<!-- ======================================================== 5 -->
+<section>
+  <h2><span class="n">5</span>ติดตั้งบน Windows</h2>
+  <ol class="steps">
+    <li>ติดตั้ง Python 3.11 หรือ 3.12 จาก <code>https://www.python.org/downloads/</code> — หน้าแรกของตัวติดตั้ง<b>ติ๊ก "Add python.exe to PATH"</b></li>
+    <li>แตกไฟล์ zip (คลิกขวา → Extract All…) ห้ามรันจากในไฟล์ zip โดยตรง</li>
+    <li>ดับเบิลคลิก <code>install_windows.bat</code> → กด <b>Yes</b> เมื่อ Windows ขอสิทธิ์ Administrator</li>
+    <li>ตอบคำถามเหมือนบน Linux แล้วรอจนขึ้น <b>ติดตั้งเสร็จแล้ว</b></li>
+  </ol>
+  <table>
+    <tr><th style="width:30%">สิ่งที่สร้าง</th><th>รายละเอียด</th></tr>
+    <tr><td><code>C:\sepsis_bundle</code></td><td>ตัวโปรแกรม, <code>.env</code> (สิทธิ์เฉพาะ Administrators/SYSTEM), <code>data\</code></td></tr>
+    <tr><td>Task <code>SepsisBundle-Web</code></td><td>เปิดหน้าเว็บ (waitress) อัตโนมัติตอนเปิดเครื่อง รีสตาร์ทเองถ้าหลุด</td></tr>
+    <tr><td>Task <code>SepsisBundle-Scheduler</code></td><td>ดึงเคสและแจ้งเตือนทุก 15 นาที</td></tr>
+    <tr><td>Firewall rule <code>Sepsis Bundle 5800</code></td><td>เปิดพอร์ตเฉพาะเครือข่าย Domain/Private</td></tr>
+  </table>
+  <p>เปลี่ยนโฟลเดอร์หรือพอร์ต: เปิด PowerShell แบบ Administrator ในโฟลเดอร์ที่แตกไฟล์ แล้วรัน</p>
+<pre>powershell -ExecutionPolicy Bypass -File install_windows.ps1 -AppDir D:\sepsis_bundle -Port 5900</pre>
+  <div class="box warn"><b>เครื่อง Windows ต้องเปิดตลอดและไม่เข้าโหมด Sleep</b> — ตั้ง Power Options เป็น "Never sleep" ไม่งั้นการแจ้งเตือนจะหยุด</div>
+</section>
+
+<!-- ======================================================== 6 -->
+<section>
+  <h2><span class="n">6</span>ตรวจรหัสรายการของโรงพยาบาล</h2>
+  <p>รหัส lab และรหัสยาใน HOSxP <b>ต่างกันในแต่ละโรงพยาบาล</b> สคริปต์ติดตั้งรัน <code>setup_check.py --write</code> ให้แล้ว ซึ่งค้นจากชื่อรายการ
+     เลือกเฉพาะรายการที่มีการใช้จริงใน 1 ปี แล้วเขียนลง <code>.env</code> <b>ต้องให้ทีมตรวจทานทุกครั้ง</b></p>
+  <h3>รันตรวจซ้ำ</h3>
+<pre><span class="c"># Linux</span>
+cd /opt/sepsis_bundle &amp;&amp; sudo -u sepsis .venv/bin/python setup_check.py
+<span class="c"># Windows (PowerShell แบบ Administrator)</span>
+cd C:\sepsis_bundle; .venv\Scripts\python.exe setup_check.py</pre>
+  <h3>ตัวอย่างผลลัพธ์</h3>
+<pre>=== 5. รหัสรายการของ รพ. (* = ตั้งไว้ใน .env แล้ว) ======
+  Lactate (lab_items) → SEPSIS_LACTATE_LAB_ITEMS
+   *       2240  ใช้   908 ครั้ง  Lactate
+  Hemoculture แบบรายการค่าบริการ (nondrugitems) → SEPSIS_HEMOCULTURE_ICODES
+   *    3071625  ใช้   645 ครั้ง  Hemoculture 1 ขวด / 2 ขวด / 3 ขวด
+        3160173  ใช้     0 ครั้ง  Hemoculture
+  IV fluid crystalloid 1000 ml (drugitems) → SEPSIS_IV_FLUID_ICODES
+   *    1000187  ใช้  5306 ครั้ง  NSS INJ. 0.9 % , 1000 ML
+   *    1000183  ใช้   104 ครั้ง  RLS-LACTATED RINGER 1000 ml.</pre>
+  <table>
+    <tr><th style="width:30%">ค่าใน .env</th><th>ใส่อะไร</th><th style="width:28%">ตรวจกับใคร</th></tr>
+    <tr><td><code>SEPSIS_LACTATE_LAB_ITEMS</code></td><td>รหัส lab_items ของ Lactate</td><td>ห้อง lab</td></tr>
+    <tr><td><code>SEPSIS_HEMOCULTURE_LAB_ITEMS</code></td><td>รหัส lab_items ของ Hemoculture ถ้า รพ. สั่งผ่านระบบ lab</td><td>ห้อง lab</td></tr>
+    <tr><td><code>SEPSIS_HEMOCULTURE_ICODES</code></td><td>icode ใน nondrugitems ถ้า รพ. สั่ง Hemoculture เป็นรายการค่าบริการ</td><td>ห้อง lab / การเงิน</td></tr>
+    <tr><td><code>SEPSIS_IV_FLUID_ICODES</code></td><td>icode ของ NSS / RLS / Acetar <b>ถุง 1000 ml</b> (ไม่ใส่ NSS 100 ml ที่ใช้ผสมยา)</td><td>ห้องยา</td></tr>
+    <tr><td><code>SEPSIS_NOREPINEPHRINE_ICODES</code></td><td>icode ของ Norepinephrine (Levophed)</td><td>ห้องยา</td></tr>
+    <tr><td><code>SEPSIS_DOPAMINE_ICODES</code></td><td>icode ของ Dopamine (ใช้เตือนเมื่อใช้ก่อน NE)</td><td>ห้องยา</td></tr>
+    <tr><td><code>SEPSIS_ICU_WARDS</code></td><td>รหัส ward ที่เป็น ICU (ถ้ามี) — ใส่เองใน .env ไม่มีในการค้นอัตโนมัติ</td><td>IT / หอผู้ป่วย</td></tr>
+  </table>
+  <p>Hemoculture ใส่ได้ทั้งสองแบบพร้อมกัน ระบบใช้เวลาที่เร็วที่สุด · คั่นหลายรหัสด้วยจุลภาค เช่น <code>1000187,1000183</code></p>
+  <div class="box info"><b>ยาปฏิชีวนะ</b> ไม่ต้องใส่รหัส — ระบบใช้ยาที่ติ๊ก <code>antibiotic = 'Y'</code> ในทะเบียนยา (drugitems) ของ HOSxP
+     ถ้า setup_check เตือนว่าไม่มี ให้ห้องยาตั้งค่าใน HOSxP ก่อน</div>
+  <p>setup_check ยังแสดงตารางรหัสสถานะจำหน่าย (<code>ovstost</code>, <code>er_dch_type</code>) ว่าแต่ละรหัสนับเป็น Refer / เสียชีวิต / กลับบ้าน ฯลฯ
+     ถ้า รพ. ตั้งรหัสต่างจากมาตรฐาน แก้ได้ใน <code>.env</code> (หัวข้อ 15)</p>
+  <p><b>แก้ .env แล้วต้อง restart หน้าเว็บ</b> (หัวข้อ 17) — งานแจ้งเตือนอ่านค่าใหม่เองในรอบถัดไป</p>
+</section>
+
+<!-- ======================================================== 7 -->
+<section>
+  <h2><span class="n">7</span>ตั้งค่าแจ้งเตือน MOPH Notify</h2>
+  <p>MOPH Notify (หมอพร้อม) ส่งข้อความเข้ากลุ่ม LINE ของหน่วยบริการโดยไม่มีค่าใช้จ่าย ทำครั้งเดียว:</p>
+  <ol class="steps">
+    <li>สร้างกลุ่ม LINE แล้ว<b>ตั้งชื่อให้ลงท้ายด้วย HC + รหัสหน่วยบริการ 5 หลัก</b> เช่น <code>Sepsis ER HC12345</code> — ต้องตั้งชื่อก่อนเชิญหมอพร้อม</li>
+    <li>เชิญบัญชี LINE <b>"หมอพร้อม"</b> เข้ากลุ่ม</li>
+    <li>Admin หน่วยบริการเข้า CMS MOPH Notify แล้ว<b>อนุมัติกลุ่ม</b></li>
+    <li>ดู <b>Client_ID</b> และ <b>Secret</b> ของกลุ่มในเมนูกลุ่มบอท</li>
+    <li>เปิด <code>http://&lt;IP เครื่อง&gt;:5800/settings</code> (หรือปุ่ม "⚙️ ตั้งค่าแจ้งเตือน" บนแดชบอร์ด) กรอก Client Key และ Secret Key แล้วกด <b>บันทึก + ทดสอบส่ง</b></li>
+  </ol>
+  <p>ถ้าสำเร็จ กลุ่ม LINE จะได้การ์ดทดสอบ 2 ใบ (ข้อมูลสมมติ) ค่าที่บันทึกเก็บใน <code>data/moph_settings.json</code> ไม่ต้อง restart</p>
+  <img class="shot" src="img/settings.png" alt="" style="width:78%; display:block; margin:8px auto">
+  <div class="cap">หน้าตั้งค่าแจ้งเตือน</div>
+  <div class="box info"><b>ทางเลือก:</b> ถ้าไม่ใช้ MOPH Notify ระบบส่งเป็นข้อความธรรมดาผ่าน LINE Messaging API ได้ (ต้องมี LINE Official Account เอง)
+     โดยใส่ <code>LINE_CHANNEL_ACCESS_TOKEN</code> และ <code>LINE_TO</code> ใน .env · LINE Notify เดิมปิดบริการแล้วตั้งแต่ มี.ค. 2568</div>
+</section>
+
+<!-- ======================================================== 8 -->
+<section class="flow">
+  <h2><span class="n">8</span>ใส่โลโก้และชื่อโรงพยาบาล</h2>
+  <ul>
+    <li><b>ชื่อ</b> — แก้ <code>SEPSIS_HOSPITAL_NAME</code> ใน <code>.env</code> แล้ว restart หน้าเว็บ (ชื่อแสดงบนแดชบอร์ดและหัวการ์ด LINE)</li>
+    <li><b>โลโก้</b> — แทนที่ไฟล์ <code>static/logo.png</code> ด้วยโลโก้ของ รพ. แนะนำ PNG สี่เหลี่ยมจัตุรัส 256×256 px พื้นโปร่งใส
+        และ <code>static/favicon.png</code> (ไอคอนแท็บเบราว์เซอร์ 64×64 px) · ไม่ต้อง restart แค่รีเฟรชหน้าเว็บ</li>
+  </ul>
+  <p>ตอนอัปเดตเวอร์ชัน สคริปต์ติดตั้งจะไม่ทับโลโก้ที่เปลี่ยนไว้</p>
+</section>
+
+<!-- ======================================================== 9 -->
+<section>
+  <h2><span class="n">9</span>การใช้งานแดชบอร์ด</h2>
+  <ul>
+    <li><b>ช่วงวันที่มาถึง ER</b> — เลือกวันเริ่ม-สิ้นสุด หรือกดปุ่มด่วน วันนี้ / 7 วัน / 30 วัน / เดือนนี้ / เดือนที่แล้ว / ปีงบนี้ (ดูได้สูงสุด 366 วันต่อครั้ง)</li>
+    <li><b>KPI 4 ช่อง</b> — จำนวนเคส (แยก Admit / Refer / กลับบ้าน ฯลฯ), เคสที่ทำครบ 4 ข้อใน 1 ชม., ร้อยละยาปฏิชีวนะ และ Lactate ภายใน 1 ชม.</li>
+    <li><b>กราฟรายข้อ</b> — ตัวหารคือเคสทั้งหมด เคสที่ไม่พบคำสั่งนับเป็น "ไม่ได้ทำภายในเวลา"</li>
+    <li><b>แถบแดง</b> — เตือนเมื่อมีเคสที่ให้ยาปฏิชีวนะก่อนเก็บ Hemoculture</li>
+  </ul>
+  <img class="shot" src="img/case_ssc.png" alt="" style="width:62%; display:block; margin:8px auto">
+  <div class="cap">การ์ดรายเคส พร้อมกล่อง SSC 2026 (ข้อมูลตัวอย่าง)</div>
+  <h3>อ่านการ์ดรายเคส</h3>
+  <ul>
+    <li><b>ป้ายบนสุด</b> — ผ่านครบ 4/4 (ขอบเขียว) หรือผ่านกี่ข้อ (ขอบแดง) นับเฉพาะ 4 ข้อหลัก</li>
+    <li><b>เริ่มนับ</b> — time-zero และแหล่งของเวลา เช่น "เวลาเข้า ER"</li>
+    <li><b>สถานะจำหน่าย</b> — 🛏️ Admit · 🚑 Refer → รพ.ปลายทาง + เวลา · 🏠 กลับบ้าน · 🕯️ เสียชีวิต · ✋ ปฏิเสธการรักษา · 🚪 หนีกลับ · ⏳ ยังไม่จำหน่าย</li>
+    <li><b>แต่ละข้อ</b> — ใต้ชื่อบอกแหล่งของเวลา (เช่น "พยาบาลบันทึกเวลาให้ (ER)", "สั่งยาที่ ER", "สั่ง Lab") และยกข้อความบันทึกต้นทางมาให้ตรวจทาน
+        ด้านขวาเป็นนาทีหลัง time-zero (เขียว = ภายในเวลา, แดง = เกิน/ไม่พบ, เทา = ต้องยืนยันเอง)</li>
+    <li><b>"OPD (ไม่ผ่าน ER)"</b> — visit ที่ลงรหัส sepsis แต่ไม่ได้มาทาง ER อาจเป็นการนัดติดตามหลังจำหน่าย ควรทบทวนก่อนนับเป็นเคสเฉียบพลัน</li>
+  </ul>
+    <li><b>กล่อง SSC 2026</b> ท้ายการ์ด — NEWS2 แรกรับ, สัญญาณ shock, ชีพจร, ค่า Lactate และการวัดซ้ำ, ยาตามเป้า SSC,
+        สารน้ำเทียบ 30 mL/kg, ชนิดสารน้ำ, ยากระตุ้นความดัน และ refer/ICU ภายใน 6 ชม. (รายละเอียดหัวข้อ 10)</li>
+  </ul>
+  <p>ข้อมูลดิบแบบ JSON ดึงได้ที่ <code>/api/data.json?d1=2026-10-01&amp;d2=2026-10-31</code> (ใช้ทำรายงานต่อ)</p>
+</section>
+
+<!-- ======================================================== 10 -->
+<section>
+  <h2><span class="n">10</span>ตัวชี้วัด SSC 2026 แนวโน้ม และความครบถ้วนข้อมูล</h2>
+  <p>ปรับตาม <b>Surviving Sepsis Campaign: International Guidelines 2026</b> (ตีพิมพ์ 23 มี.ค. 2026) ที่เน้นให้โรงพยาบาลมีระบบติดตามคุณภาพ
+     (Rec 1, strong) — ตัวชี้วัดชุดนี้<b>แสดงเพิ่ม ไม่เปลี่ยนเกณฑ์ "ครบ 4 ข้อ"</b> เดิม ตัวเลขย้อนหลังจึงยังเทียบกันได้</p>
+  <img class="shot" src="img/ssc.png" alt="">
+  <div class="cap">การ์ดตัวชี้วัด SSC 2026 (ข้อมูลตัวอย่าง)</div>
+  <table>
+    <tr><th style="width:24%">ตัวชี้วัด</th><th>นิยามในระบบ</th><th style="width:20%">อ้างอิง SSC 2026</th></tr>
+    <tr><td>Shock / hypoperfusion</td><td>ข้อใดข้อหนึ่ง: ICD10 R57.2, SBP แรกรับ &lt; 90, MAP &lt; 65, BP ต่ำสุดในบันทึก ER &lt; 90, Lactate แรก ≥ 4, ได้ยากระตุ้นความดัน</td><td>ใช้กำหนดเป้าด้านล่าง</td></tr>
+    <tr><td>ยาปฏิชีวนะตามเป้า</td><td>เคส shock ภายใน 1 ชม. · ไม่ shock ภายใน 3 ชม. (นับจาก time-zero)</td><td>Rec 16 (strong) · Rec 18 · probable sepsis ควร 1 ชม. (Rec 17)</td></tr>
+    <tr><td>ค่า Lactate และการวัดซ้ำ</td><td>ค่าผลครั้งแรก · ถ้า &gt; 2 ต้องมีการสั่งตรวจซ้ำ (ห่างครั้งแรก ≥ 30 นาที) ภายใน 6 ชม. — แสดงเวลาวัดซ้ำแม้ช้าเกิน</td><td>Rec 8, Rec 51</td></tr>
+    <tr><td>สารน้ำ 30 mL/kg</td><td>เฉพาะเคส shock · เป้า = 30 × น้ำหนัก (opdscreen.bw) · ปริมาณที่ให้ = <b>load/bolus ที่พยาบาลเขียนใน ER ภายใน 3 ชม.</b> (ไม่นับ rate คงที่ เช่น 80 cc/hr)
+        · เป็น<b>ข้อมูลประกอบ</b> ไม่ใช่เกณฑ์ผ่าน/ไม่ผ่าน</td><td>Rec 10 (conditional) + ประเมินซ้ำเสมอ</td></tr>
+    <tr><td>ชนิดสารน้ำ</td><td>Balanced (RLS / Acetar / Sterofundin / Plasma-Lyte) หรือ NSS จากบันทึกพยาบาล</td><td>Rec 44 (conditional)</td></tr>
+    <tr><td>ยากระตุ้นความดัน</td><td>ตัวแรกและเวลาเริ่ม จากบันทึกพยาบาล (Levophed / norepinephrine / dopamine) และคำสั่งยาตามรหัสใน .env · เตือนถ้าใช้ dopamine ก่อน</td><td>Rec 53 (strong) · Rec 12 · Rec 13</td></tr>
+    <tr><td>Refer / ICU ภายใน 6 ชม.</td><td>เฉพาะเคส shock · refer หรือ admit เข้า ward ที่ตั้งใน <code>SEPSIS_ICU_WARDS</code> ภายใน 6 ชม. · admit หอผู้ป่วยทั่วไปแสดงเป็น "—"</td><td>Rec 15 (conditional)</td></tr>
+    <tr><td>NEWS2 แรกรับ</td><td>ใช้คะแนนที่ ER กรอกใน HOSxP ถ้ามี ไม่งั้นคำนวณจาก RR, SpO₂, O₂, SBP, HR, ความรู้สึกตัว (AVPU), อุณหภูมิ — ข้อที่ไม่มีข้อมูลจะแสดง "+" และบอกว่าขาดตัวไหน</td><td>Rec 4 (strong): ใช้ NEWS/NEWS2/MEWS/SIRS แทน qSOFA</td></tr>
+  </table>
+  <h3>แนวโน้มรายเดือน</h3>
+  <p>เลือกช่วงตั้งแต่ 2 เดือนขึ้นไป (เช่นปุ่ม "ปีงบนี้") จะเห็นตารางรายเดือน: จำนวนเคส, shock, ครบ 4 ข้อ, ยา ≤ 1 ชม., ยาตามเป้า SSC,
+     H/C ก่อนยา และ Lactate ≤ 1 ชม. — ใช้ประกอบการประชุม PCT</p>
+  <img class="shot" src="img/trend.png" alt="">
+  <h3>ความครบถ้วนของข้อมูล</h3>
+  <p>บอกว่าข้อมูลต้นทางใน HOSxP ถูกบันทึกครบแค่ไหน เช่น น้ำหนัก ชีพจร SpO₂ ระดับความรู้สึกตัว NEWS2 เวลา triage และเวลาที่พยาบาลบันทึกการให้ยา
+     <b>ช่องที่ได้ 0% ส่วนใหญ่ HOSxP มีให้กรอกอยู่แล้ว</b> — เมื่อ ER เริ่มกรอก ระบบใช้ค่านั้นทันทีโดยไม่ต้องแก้โปรแกรม และตัวชี้วัดจะแม่นขึ้น</p>
+  <img class="shot" src="img/data.png" alt="" style="width:80%; display:block; margin:8px auto">
+</section>
+
+<!-- ======================================================== 11 -->
+<section>
+  <h2><span class="n">11</span>หน้าต่างเตือนสงสัย Sepsis ใน HOSxP</h2>
+  <p>ส่วนเสริม (โฟลเดอร์ <code>hosxp_alert/</code>) — เมื่อพยาบาลบันทึกชีพจรในหน้าซักประวัติ แล้ว <b>SOS Score &gt; 3 ร่วมกับไข้ ≥ 38 °C หรือตัวเย็น &lt; 36 °C</b>
+     (อายุ ≥ 15 ปี) HOSxP จะขึ้นหน้าต่างเตือนทันที โดยไม่ต้องรอแพทย์ลงรหัส ICD · ใช้จริงที่ รพ.วังน้ำเขียว (HOSxP 3.69.9.24) เตือนเฉลี่ย ~1 ครั้ง/วัน</p>
+  <img class="shot" src="img/hosxp_alert.png" alt="">
+  <div class="cap">ซ้าย: จุดคัดกรอง (ส่ง ER ทันที) · ขวา: ER (เริ่ม Bundle + เวลาเป้าหมาย) — ภาพจำลอง</div>
+  <ul>
+    <li><b>แยกจุด:</b> ถือว่าเป็น ER เมื่อแผนกที่ซักประวัติ (<code>opdscreen.screen_dep</code>) เป็นรหัส ER ของ รพ. หรือมีแถว <code>er_regist</code> แล้ว</li>
+    <li>SOS &gt; 3 ที่ไม่มีไข้ยังขึ้นข้อความ SOS แบบเดิม · เป็น script ในตาราง <code>sys_app_script</code> ชื่อ <code>SYS_VN_SCRIPT</code> ไม่ต้องติดตั้งที่เครื่องพยาบาล</li>
+  </ul>
+  <h3>ติดตั้ง (ผู้ดูแล HOSxP)</h3>
+<pre><span class="c"># 1) ตรวจ: script เดิม, รหัสแผนก ER ที่แนะนำ, ประมาณจำนวนการเตือน (อ่านอย่างเดียว)</span>
+python install_alert.py check --host &lt;IP ฐาน&gt; --user sepsis_deploy
+<span class="c"># 2) ติดตั้งฐานทดสอบก่อน แล้วทดสอบใน HOSxP</span>
+python install_alert.py install --host &lt;IP ฐานทดสอบ&gt; --db hos_test --user &lt;user&gt; --er-deps 011
+<span class="c"># 3) ติดตั้งฐานจริง (สำรอง script เดิมลง backups/ อัตโนมัติ)</span>
+python install_alert.py install --host &lt;IP ฐานหลัก&gt; --user sepsis_deploy --er-deps 011
+<span class="c"># ย้อนกลับ</span>
+python install_alert.py rollback --host &lt;IP ฐานหลัก&gt; --user sepsis_deploy --backup backups/&lt;ไฟล์&gt;.pas</pre>
+  <div class="box danger"><b>ห้ามติดตั้งบนฐาน replica และห้ามต่อ HOSxP เครื่องทดสอบเข้า replica</b> — การบันทึกจะทำให้ replication พัง ·
+     HOSxP ไม่แสดง error ของ script ถ้าแปลไม่ผ่านจะไม่ขึ้นอะไรเลย (รวมข้อความ SOS) จึงต้องทดสอบในฐานทดสอบก่อนและเช็คผู้ป่วยจริงทันทีหลังติดตั้ง</div>
+  <p>ถ้า รพ. มี <code>SYS_VN_SCRIPT</code> ของตัวเอง ตัวติดตั้งจะไม่ทับให้ — รายละเอียดการรวม script, ตารางทดสอบ 5 กรณี และข้อจำกัดของ script engine อยู่ใน <code>hosxp_alert/README.md</code></p>
+</section>
+
+<!-- ======================================================== 12 -->
+<section>
+  <h2><span class="n">12</span>การแจ้งเตือนในกลุ่ม LINE</h2>
+  <table>
+    <tr><th style="width:24%">การ์ด</th><th>ส่งเมื่อ</th><th style="width:34%">เนื้อหา</th></tr>
+    <tr><td>🚨 พบเคสใหม่</td><td>รอบแรกที่ระบบเห็นเคส (ทุก 15 นาที) ถ้าเคสยังไม่เก่ากว่า 6 ชม.</td><td>HN/AN/VN, หอผู้ป่วย, เตียง, ICD10, เวลาที่เหลือ หรือ "เลยกำหนดแล้ว", <b>ประเมินแรกรับ</b> (NEWS2, ชีพจร, สัญญาณ shock, เป้าสารน้ำ 30 mL/kg ตามน้ำหนัก) + รายการ Sepsis Six</td></tr>
+    <tr><td>📋 ผล bundle</td><td>หลังครบ 60 นาที + 10 นาทีเผื่อบันทึก (เปิดด้วย <code>SEPSIS_SEND_BUNDLE_RESULT=1</code>)</td><td>ผลทีละข้อ เวลา แหล่งของเวลา สถานะจำหน่าย และสรุป SSC 2026 (Lactate/วัดซ้ำ, ยาตามเป้า, สารน้ำ, vasopressor, refer)</td></tr>
+  </table>
+  <ul>
+    <li>แต่ละเคสแจ้งครั้งเดียวต่อชนิดการ์ด แม้ลงรหัสที่ ER แล้วลงซ้ำหลัง admit (กันซ้ำด้วยฐานข้อมูล SQLite ใน <code>data/</code>)</li>
+    <li>ระบบเห็นเคสเมื่อแพทย์ลง ICD10 sepsis แล้ว ถ้าลงรหัสช้า การ์ดจะมาหลังครบ 1 ชม. และบอกว่าเลยกำหนดแล้วกี่นาที</li>
+    <li><b>ไม่มีชื่อ-นามสกุลผู้ป่วยในข้อความ</b> มีเฉพาะ HN/AN/VN/หอผู้ป่วย/เตียง</li>
+    <li>แนะนำเปิดการ์ดผล bundle หลังทีมทวนผลในแดชบอร์ดกับเวชระเบียนแล้ว 1-2 สัปดาห์</li>
+  </ul>
+</section>
+
+<!-- ======================================================== 13 -->
+<section>
+  <h2><span class="n">13</span>เกณฑ์และแหล่งข้อมูล</h2>
+  <h3>เคส</h3>
+  <p>visit ที่มี ICD10 <code>A40.x</code>, <code>A41.x</code> หรือ <code>R57.2</code> ใน <code>ovstdiag</code> (ER/OPD) หรือ <code>iptdiag</code> (หลัง admit) — ช่วงวันอิงวันที่มาถึง (<code>ovst.vstdate</code>)</p>
+  <h3>Time-zero (เวลาเริ่มนับ)</h3>
+  <p>ค่าแรกที่มีของ <code>er_regist.sepsis_recognition_datetime</code> → <code>triage_datetime</code> → <code>enter_er_time</code> → เวลาลงทะเบียน visit
+     (ถ้า ER เริ่มกรอก "เวลารับรู้ sepsis" ใน HOSxP ระบบจะใช้ค่านั้นทันที) · ตั้ง <code>SEPSIS_TIME_ZERO=admission</code> เพื่อนับจากเวลา admit แทน</p>
+  <h3>Element และแหล่งของเวลา</h3>
+  <table>
+    <tr><th style="width:17%">ข้อ</th><th>ระบบหาเวลาจาก (เลือกตามลำดับ)</th><th style="width:22%">ผ่านเมื่อ</th></tr>
+    <tr><td>Lactate</td><td>เวลาสั่ง lab <code>lab_head.order_date/order_time</code> ของรหัสใน <code>SEPSIS_LACTATE_LAB_ITEMS</code></td><td>สั่งภายใน 60 นาที</td></tr>
+    <tr><td>Hemoculture</td><td>เวลาที่เร็วที่สุดของ: บันทึกพยาบาล, เวลาสั่ง lab, เวลาสั่งรายการค่าบริการ (<code>opitemrece_log</code> / <code>opitemrece</code>)</td><td>ภายใน 60 นาที (และเตือนถ้าหลังยาปฏิชีวนะ)</td></tr>
+    <tr><td>ยาปฏิชีวนะ</td><td>1) เวลาที่พยาบาลบันทึกใน HPI 2) <code>er_regist.antibiotics_datetime</code> 3) ครั้งแรกที่ยาปรากฏใน <code>opitemrece_log</code> ของ visit ER 4) คำสั่งบนหอ (<code>item_type='P'</code>)</td><td>ภายใน 60 นาที</td></tr>
+    <tr><td>IV fluid</td><td>เหมือนยาปฏิชีวนะ ใช้รหัสใน <code>SEPSIS_IV_FLUID_ICODES</code> · บันทึกพยาบาลต้องมีคำว่า iv/load/drip</td><td>ภายใน 60 นาที</td></tr>
+    <tr><td>ออกซิเจน</td><td>บันทึกพยาบาล เช่น On O2 cannula, mask c bag, HFNC, ETT · หรือ SpO₂ แรก</td><td>ให้ O₂ หรือ SpO₂ แรก ≥ 94%</td></tr>
+    <tr><td>Urine output</td><td>บันทึกพยาบาล เช่น retained foley, สวนปัสสาวะคาสาย, I/O</td><td>มีบันทึก (ไม่มีเวลา)</td></tr>
+  </table>
+  <p>"ครบ 4 ข้อ" นับเฉพาะ Lactate, Hemoculture, ยาปฏิชีวนะ และ IV fluid · ออกซิเจนและ Urine output แสดงผลประกอบ ถ้าไม่พบบันทึกจะขึ้น "ยืนยันเอง"</p>
+  <div class="box warn"><b>เวลาสั่ง ≠ เวลาให้จริง</b> — HOSxP ไม่มีตารางบันทึกการให้ยาที่เชื่อถือได้ (<code>ipd_mar</code> เป็นตารางคำสั่ง)
+     ระบบจึงใช้เวลาที่พยาบาลเขียนในบันทึกก่อน ถ้าไม่มีจึงใช้เวลาสั่ง ซึ่งอาจเร็วกว่าเวลาให้จริง หน้าแดชบอร์ดบอกแหล่งของเวลาทุกข้อ</div>
+</section>
+
+<!-- ======================================================== 14 -->
+<section>
+  <h2><span class="n">14</span>แนวทางบันทึกของพยาบาล ER</h2>
+  <p>ระบบอ่านบันทึกซักประวัติ/การพยาบาลของ visit ER (<code>opdscreen.hpi</code> และหมายเหตุ) แยกรายการที่คั่นด้วย <code>" - "</code>
+     แล้วหาเวลาที่ให้จริง ตัวอ่านพัฒนาจากรูปแบบการเขียนของ รพ.วังน้ำเขียว <b>เวลาจะถูกนับเมื่อมี "at" / "stat" / "เวลา" นำหน้า หรือ "น." ต่อท้าย</b>
+     (กันการอ่านค่า lab เช่น Cr 6.14 เป็นเวลา)</p>
+  <table>
+    <tr><th style="width:50%">✅ ระบบอ่านได้</th><th>❌ ระบบอ่านเวลาไม่ได้</th></tr>
+    <tr><td><code>- Ceftriaxone 2 g iv drip at 13.40 น.</code></td><td><code>- Ceftriaxone 2 g iv 13.40</code> (ไม่มี at / น.)</td></tr>
+    <tr><td><code>- 0.9%NaCl 1,000 ml iv load at 13.25 น.</code></td><td><code>- NSS 1000 ml</code> (ไม่มี iv/load และเวลา)</td></tr>
+    <tr><td><code>- H/C x 2 ขวด เวลา 13.20 น.</code></td><td><code>- เจาะเลือดส่งตรวจแล้ว</code></td></tr>
+    <tr><td><code>- On O2 cannula 3 LPM</code> · <code>- retained foley cath</code></td><td>บันทึกไว้ในหน้าจออื่นที่ไม่ใช่ HPI ของ ER</td></tr>
+  </table>
+  <div class="box info"><b>แนะนำ:</b> ทำแบบฟอร์มข้อความสำเร็จรูป (template) ใน HOSxP ให้ ER เขียนรายการละบรรทัด ขึ้นต้นด้วย " - " และลงท้ายด้วย "at HH.MM น." ทุกครั้ง
+     แล้วทวนผลในแดชบอร์ด — ถ้าเขียนรูปแบบอื่น ข้อความต้นทางยังแสดงให้ตรวจ แต่ระบบจะใช้เวลาสั่งแทน</div>
+</section>
+
+<!-- ======================================================== 15 -->
+<section>
+  <h2><span class="n">15</span>ค่าตั้งค่าใน .env ทั้งหมด</h2>
+  <p>ไฟล์อยู่ที่ <code>/opt/sepsis_bundle/.env</code> (Linux) หรือ <code>C:\sepsis_bundle\.env</code> (Windows) · แก้แล้ว restart หน้าเว็บ</p>
+  <table>
+    <tr><th style="width:36%">ค่า</th><th style="width:16%">ค่าเริ่มต้น</th><th>ความหมาย</th></tr>
+    <tr><td><code>SEPSIS_HOSPITAL_NAME</code></td><td>โรงพยาบาล</td><td>ชื่อบนหน้าเว็บและการ์ด LINE</td></tr>
+    <tr><td><code>DB_HOST</code> / <code>DB_PORT</code> / <code>DB_NAME</code></td><td>127.0.0.1 / 3306 / hos</td><td>ที่อยู่ฐานข้อมูล HOSxP</td></tr>
+    <tr><td><code>DB_USER</code> / <code>DB_PASS</code></td><td>–</td><td>user แบบ SELECT อย่างเดียว</td></tr>
+    <tr><td><code>SEPSIS_DB_MODE</code></td><td>direct</td><td>direct = ต่อฐานข้อมูลตรง</td></tr>
+    <tr><td><code>PORT</code></td><td>5800</td><td>พอร์ตหน้าเว็บ (บน Linux/Windows กำหนดตอนติดตั้ง)</td></tr>
+    <tr><td><code>SEPSIS_LACTATE_LAB_ITEMS</code></td><td>(ว่าง)</td><td>รหัส lab Lactate</td></tr>
+    <tr><td><code>SEPSIS_HEMOCULTURE_LAB_ITEMS</code></td><td>(ว่าง)</td><td>รหัส lab Hemoculture</td></tr>
+    <tr><td><code>SEPSIS_HEMOCULTURE_ICODES</code></td><td>(ว่าง)</td><td>icode รายการค่าบริการ Hemoculture</td></tr>
+    <tr><td><code>SEPSIS_IV_FLUID_ICODES</code></td><td>(ว่าง)</td><td>icode สารน้ำ crystalloid 1000 ml</td></tr>
+    <tr><td><code>SEPSIS_NOREPINEPHRINE_ICODES</code> / <code>SEPSIS_DOPAMINE_ICODES</code></td><td>(ว่าง)</td><td>icode ยากระตุ้นความดัน</td></tr>
+    <tr><td><code>SEPSIS_ICU_WARDS</code></td><td>(ว่าง)</td><td>รหัส ward ICU สำหรับตัวชี้วัด refer/ICU ภายใน 6 ชม.</td></tr>
+    <tr><td><code>SEPSIS_LACTATE_REPEAT_HOURS</code></td><td>6</td><td>กรอบเวลาวัด Lactate ซ้ำเมื่อค่าแรก &gt; 2</td></tr>
+    <tr><td><code>SEPSIS_TIME_ZERO</code></td><td>er</td><td>er = นับจากมาถึง ER · admission = นับจากเวลา admit</td></tr>
+    <tr><td><code>SEPSIS_BUNDLE_MINUTES</code></td><td>60</td><td>กรอบเวลาของ bundle (นาที)</td></tr>
+    <tr><td><code>SEPSIS_WINDOW_HOURS</code></td><td>24</td><td>ช่วงที่ค้นคำสั่ง/lab หลัง time-zero</td></tr>
+    <tr><td><code>SEPSIS_SEND_BUNDLE_RESULT</code></td><td>0</td><td>1 = ส่งการ์ดผล bundle หลังครบเวลา</td></tr>
+    <tr><td><code>SEPSIS_NOTIFY_GRACE_MINUTES</code></td><td>10</td><td>เวลาเผื่อบันทึกก่อนส่งการ์ดผล</td></tr>
+    <tr><td><code>SEPSIS_MAX_ALERT_AGE_HOURS</code></td><td>6</td><td>ไม่แจ้งเคสที่เก่ากว่านี้ (กันการ์ดย้อนหลังท่วมกลุ่มตอนเริ่มใช้)</td></tr>
+    <tr><td><code>SEPSIS_OVSTOST_REFER</code> / <code>_DEATH</code> / <code>_REFUSE</code> / <code>_ESCAPE</code> / <code>_HOME</code></td><td>54 / 52,53 / 96 / 97 / 99</td><td>รหัส ovstost ของแต่ละสถานะจำหน่าย</td></tr>
+    <tr><td><code>SEPSIS_ER_DCH_REFER</code> / <code>_DEATH</code> / <code>_REFUSE</code> / <code>_ESCAPE</code> / <code>_HOME</code></td><td>2 / 4,6 / 7 / 8 / 1</td><td>รหัส er_dch_type ของแต่ละสถานะจำหน่าย</td></tr>
+    <tr><td><code>LINE_CHANNEL_ACCESS_TOKEN</code> / <code>LINE_TO</code></td><td>–</td><td>ทางเลือกแทน MOPH Notify</td></tr>
+  </table>
+</section>
+
+<!-- ======================================================== 16 -->
+<section>
+  <h2><span class="n">16</span>ความปลอดภัยและความเป็นส่วนตัว</h2>
+  <div class="box danger"><b>ห้ามเปิดแดชบอร์ดออกอินเทอร์เน็ต</b> — หน้าเว็บแสดงข้อมูลผู้ป่วย (HN/AN/ICD10/บันทึกพยาบาล) และ<b>ไม่มีระบบล็อกอิน</b>
+     ใช้เฉพาะในวง LAN ของโรงพยาบาล ห้ามทำ port forward หรือ reverse proxy ออกภายนอก</div>
+  <ul>
+    <li>หน้า <code>/settings</code> แก้ค่า MOPH Notify ได้โดยไม่ต้องล็อกอิน — ถ้าวง LAN กว้าง ควรจำกัด IP ที่เข้าพอร์ต 5800 ได้ด้วย firewall
+        เช่น <code>firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=192.168.10.0/24 port port=5800 protocol=tcp accept'</code></li>
+    <li>ใช้ user ฐานข้อมูลแบบ SELECT อย่างเดียว · ไฟล์ <code>.env</code> และ <code>data/</code> จำกัดสิทธิ์ให้เฉพาะระบบอ่านได้ — ห้ามส่งไฟล์เหล่านี้ให้ผู้อื่น</li>
+    <li>ข้อความแจ้งเตือนไม่มีชื่อผู้ป่วย แต่มี HN/AN — ตั้งกลุ่ม LINE เป็นกลุ่มปิดเฉพาะบุคลากรที่เกี่ยวข้อง และทบทวนสมาชิกเป็นระยะ</li>
+    <li>ข้อมูลที่ออกนอกโรงพยาบาลมีเพียงข้อความแจ้งเตือนไปยัง MOPH Notify (ระบบของกระทรวงสาธารณสุข)</li>
+    <li>ระบบอ่านอย่างเดียว ไม่แก้ไขข้อมูลใน HOSxP</li>
+  </ul>
+</section>
+
+<!-- ======================================================== 17 -->
+<section class="flow">
+  <h2><span class="n">17</span>ดูแลระบบ อัปเดต และถอนการติดตั้ง</h2>
+  <h3>Linux</h3>
+<pre><span class="c"># สถานะ / restart หน้าเว็บ / log</span>
+systemctl status sepsis-bundle
+sudo systemctl restart sepsis-bundle
+journalctl -u sepsis-bundle -n 50 --no-pager
+tail -f /opt/sepsis_bundle/data/scheduler.log
+<span class="c"># ทดสอบรอบแจ้งเตือนทันที</span>
+cd /opt/sepsis_bundle &amp;&amp; sudo -u sepsis .venv/bin/python scheduler.py
+<span class="c"># อัปเดต: แตก zip เวอร์ชันใหม่ แล้วรันในโฟลเดอร์นั้น</span>
+sudo bash install.sh
+<span class="c"># ถอนการติดตั้ง</span>
+sudo systemctl disable --now sepsis-bundle
+sudo rm -f /etc/systemd/system/sepsis-bundle.service /etc/cron.d/sepsis-bundle
+sudo rm -rf /opt/sepsis_bundle &amp;&amp; sudo userdel sepsis</pre>
+  <h3>Windows (PowerShell แบบ Administrator)</h3>
+<pre><span class="c"># restart หน้าเว็บ</span>
+Stop-ScheduledTask SepsisBundle-Web; Start-ScheduledTask SepsisBundle-Web
+<span class="c"># log แจ้งเตือน</span>
+Get-Content C:\sepsis_bundle\data\scheduler.log -Tail 30
+<span class="c"># อัปเดต: แตก zip เวอร์ชันใหม่ แล้วดับเบิลคลิก install_windows.bat</span>
+<span class="c"># ถอนการติดตั้ง</span>
+Unregister-ScheduledTask SepsisBundle-Web -Confirm:$false
+Unregister-ScheduledTask SepsisBundle-Scheduler -Confirm:$false
+Remove-NetFirewallRule -DisplayName "Sepsis Bundle 5800"
+Remove-Item -Recurse -Force C:\sepsis_bundle</pre>
+</section>
+
+<!-- ======================================================== 18 -->
+<section>
+  <h2><span class="n">18</span>แก้ปัญหาที่พบบ่อย</h2>
+  <table>
+    <tr><th style="width:34%">อาการ</th><th>สาเหตุ / วิธีแก้</th></tr>
+    <tr><td>ติดตั้งแล้วหยุดที่ขั้น "ตรวจการเชื่อมต่อ HOSxP"</td><td>DB host/user/รหัสผ่านผิด หรือ user ไม่ได้ GRANT จาก IP ของเครื่องนี้ · แก้ <code>.env</code> แล้วรันสคริปต์ติดตั้งซ้ำ ·
+        ลองต่อด้วย <code>mysql -h &lt;host&gt; -u sepsis_ro -p hos</code> จากเครื่องติดตั้ง</td></tr>
+    <tr><td>เปิดแดชบอร์ดจากเครื่องอื่นไม่ได้</td><td>firewall ของเครื่องติดตั้ง หรือ firewall ระหว่างวง LAN ปิดพอร์ต 5800 · บนเครื่องเองลอง <code>http://127.0.0.1:5800/healthz</code></td></tr>
+    <tr><td>Lactate / Hemoculture / IV fluid เป็น "ไม่พบ" ทุกเคส</td><td>ยังไม่ได้ใส่รหัสรายการ หรือใส่ผิด — รัน <code>setup_check.py</code> (หัวข้อ 6)</td></tr>
+    <tr><td>ยาปฏิชีวนะ "ไม่พบ" ทุกเคส</td><td>ทะเบียนยาไม่ได้ติ๊ก antibiotic = 'Y'</td></tr>
+    <tr><td>กด "ทดสอบส่ง" แล้วขึ้น Unauthorized</td><td>Client Key / Secret Key ผิด หรือกลุ่มยังไม่ได้รับอนุมัติใน CMS MOPH Notify</td></tr>
+    <tr><td>ทดสอบส่งได้ แต่ไม่มีการ์ดเคสจริง</td><td>ดู <code>data/scheduler.log</code> · ตรวจ cron/Task Scheduler · เคสต้องลง ICD10 sepsis แล้ว และไม่เก่ากว่า 6 ชม.</td></tr>
+    <tr><td>เวลาในการ์ดคลาดไป 7 ชม.</td><td>time zone เครื่องไม่ใช่ Asia/Bangkok (<code>timedatectl set-timezone Asia/Bangkok</code>)</td></tr>
+    <tr><td>หน้าเว็บช้าเมื่อเลือกช่วงยาว</td><td>ปกติเมื่อมีหลายร้อยเคส (คำนวณทีละเคส) · เลือกช่วงสั้นลง หรือต่อฐานข้อมูล replica</td></tr>
+    <tr><td>สถานะจำหน่ายผิด เช่น refer แต่ขึ้นกลับบ้าน</td><td>รหัส ovstost/er_dch_type ของ รพ. ต่างจากมาตรฐาน — ดูตารางใน setup_check แล้วตั้งใน <code>.env</code></td></tr>
+    <tr><td>ข้อความบนจอ Windows เป็นตัวอักษรเพี้ยน</td><td>คอนโซลไม่ใช่ UTF-8 · ข้อมูลในระบบไม่เสียหาย เปิดดูผลในเบราว์เซอร์ได้ตามปกติ</td></tr>
+  </table>
+</section>
+
+<!-- ======================================================== 19 -->
+<section>
+  <h2><span class="n">19</span>ข้อจำกัดที่ควรรู้</h2>
+  <ol>
+    <li>เวลาให้จริงมีเฉพาะที่พยาบาลเขียนไว้ในบันทึก ER — ที่เหลือเป็นเวลาสั่งซึ่งอาจเร็วกว่าเวลาให้จริง</li>
+    <li>ตัวอ่านบันทึกพยาบาลพัฒนาจากรูปแบบการเขียนของ รพ.วังน้ำเขียว — รพ. อื่นควรทวนผลกับเวชระเบียนช่วงแรก และปรับรูปแบบการบันทึกตามหัวข้อ 14</li>
+    <li>ระบบเห็นเคสเมื่อมีการลง ICD10 sepsis เท่านั้น — เคสที่ยังไม่ลงรหัสจะไม่ถูกแจ้ง และไม่ใช่เครื่องมือคัดกรอง (screening) sepsis</li>
+    <li>ออกซิเจนและ Urine output ไม่มีในช่องข้อมูลโครงสร้างของ HOSxP จึงอ่านจากบันทึกพยาบาล ถ้าไม่พบต้องยืนยันเอง</li>
+    <li>HOSxP รุ่นเก่าที่ไม่มีช่องเวลา sepsis/triage ใน er_regist ยังใช้ได้ โดยใช้เวลาเข้า ER แทน</li>
+    <li>ตัวชี้วัด SSC 2026: ปริมาณสารน้ำนับเฉพาะ load ที่พยาบาลเขียนไว้ (ไม่ใช่ I/O จริง) · NEWS2 ที่คำนวณเองอาจต่ำกว่าจริงถ้าไม่มีข้อมูลความรู้สึกตัว
+        · ยังไม่ได้ติดตามการประเมินซ้ำหลังให้สารน้ำ การปรับยาตามผลเพาะเชื้อ (de-escalation) และ MAP เป้าหมาย</li>
+    <li>ผลในระบบใช้เพื่อพัฒนาคุณภาพ ไม่ใช่หลักฐานทางเวชระเบียน — การตัดสินทางคลินิกเป็นของแพทย์และพยาบาลผู้ดูแล</li>
+  </ol>
+  <h3>ติดต่อผู้พัฒนา</h3>
+  <p>นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว โทร 086-257-4817</p>
+  <div class="box ok"><b>เริ่มใช้อย่างไรให้ได้ผล:</b> ติดตั้ง → ตรวจรหัส → เปิดเฉพาะการ์ด "เคสใหม่" → ทีมทวนผลแดชบอร์ดกับเวชระเบียน 1-2 สัปดาห์
+     → ปรับรูปแบบบันทึก ER → เปิดการ์ดผล bundle (<code>SEPSIS_SEND_BUNDLE_RESULT=1</code>) → ใช้ตัวเลขรายเดือนในการประชุม PCT</div>
+</section>
+
+</body>
+</html>

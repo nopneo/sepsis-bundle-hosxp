@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตั้งค่า MOPH Notify — Sepsis Six Bundle</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='fonts.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<style>
+  .narrow { max-width: 720px; margin: 0 auto; }
+  .card { margin-top: 16px; }
+  .status { display: inline-block; padding: 2px 12px; border-radius: 999px; font-family: "Kanit", sans-serif;
+            font-weight: 600; font-size: 14.5px; }
+  .status.on { background: #d1fae5; color: #047857; }
+  .status.off { background: #fee2e2; color: #b91c1c; }
+  ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+  ol.steps li { counter-increment: s; display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; font-size: 16px; line-height: 1.6; }
+  ol.steps li::before { content: counter(s); flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+                        background: linear-gradient(135deg, #6d4ee8, #a47bf7); color: #fff; font-family: "Kanit", sans-serif; font-weight: 600; font-size: 15px; margin-top: 1px; }
+  ol.steps b { color: #5b3fd6; }
+  label { display: block; margin-top: 16px; font-size: 16px; font-weight: 600; color: var(--ink); }
+  label:first-of-type { margin-top: 0; }
+  input { width: 100%; padding: 10px 12px; margin-top: 6px; border: 1.5px solid #cfc8ee; border-radius: 12px;
+          font: inherit; font-weight: 400; font-size: 17px; color: var(--ink); background: #fff; }
+  input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(109,78,232,.18); }
+  .hint { color: #4b5563; font-size: 14.5px; font-weight: 400; margin-top: 4px; line-height: 1.5; }
+  .actions { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px; }
+  button { padding: 11px 20px; border-radius: 12px; border: none; font-family: "Kanit", sans-serif; font-weight: 600;
+           font-size: 16.5px; cursor: pointer; }
+  button.primary { background: linear-gradient(135deg, #6d4ee8, #a47bf7); color: #fff; box-shadow: 0 6px 14px rgba(109,78,232,.28); }
+  button.secondary { background: #ece8fb; color: var(--navy); }
+  .flash { margin-top: 16px; padding: 12px 16px; border-radius: 14px; font-size: 16px; font-weight: 600; }
+  .flash.ok { background: #d1fae5; color: #065f46; border: 1.5px solid #86efac; }
+  .flash.err { background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="โลโก้{{ hospital }}">
+    <div class="ttl">
+      <h1>ตั้งค่าแจ้งเตือน</h1>
+      <span class="pill">🔔 MOPH Notify · ส่งเข้ากลุ่ม LINE ของหน่วยบริการ</span>
+    </div>
+    <div class="chip">
+      <a class="btn" href="{{ url_for('dashboard') }}">← กลับหน้าแดชบอร์ด</a>
+      <div class="b">สถานะ: <span class="status {{ 'on' if configured else 'off' }}">
+        {{ 'ตั้งค่าครบแล้ว' if configured else 'ยังตั้งค่าไม่ครบ' }}</span></div>
+    </div>
+  </header>
+
+  <div class="narrow">
+    {% if message %}<div class="flash ok">{{ message }}</div>{% endif %}
+    {% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+
+    <section class="card">
+      <div class="ch"><span class="ic">🧭</span>ขั้นตอนเตรียมกลุ่ม LINE <small>ทำครั้งเดียว</small></div>
+      <ol class="steps">
+        <li><span>สร้าง LINE group ตั้งชื่อ<b>ลงท้ายด้วย HC + รหัสหน่วยบริการ 5 หลัก</b> เช่น "Sepsis IPD HC12345"</span></li>
+        <li><span>เพิ่มเพื่อน <b>"หมอพร้อม"</b> เข้ากลุ่ม (ต้องตั้งชื่อกลุ่มก่อนเชิญ)</span></li>
+        <li><span>Admin หน่วยบริการ<b>อนุมัติ</b>กลุ่มใน CMS MOPH Notify</span></li>
+        <li><span>ดู <b>Client_ID / Secret</b> ในเมนูกลุ่มบอท แล้วนำมากรอกด้านล่าง</span></li>
+        <li><span>กด "บันทึก + ทดสอบส่ง" เพื่อตรวจว่าเชื่อมต่อได้</span></li>
+      </ol>
+    </section>
+
+    <form method="post" class="card">
+      <div class="ch"><span class="ic">🔑</span>ข้อมูลเชื่อมต่อ</div>
+      <label>Client Key (Client_ID)
+        <input type="text" name="client_key" value="{{ s.client_key }}" autocomplete="off" required>
+      </label>
+
+      <label>Secret Key
+        <input type="password" name="secret_key" autocomplete="off"
+               placeholder="{{ '•••••• (เว้นว่างไว้ถ้าไม่เปลี่ยน)' if s.secret_key else '' }}"
+               {{ '' if s.secret_key else 'required' }}>
+        <div class="hint">ไม่แสดงค่าเดิมในฟอร์มเพื่อความปลอดภัย เว้นว่าง = ใช้ค่าเดิม</div>
+      </label>
+
+      <label>API URL
+        <input type="url" name="base_url" value="{{ s.base_url }}" autocomplete="off">
+        <div class="hint">ค่าเริ่มต้นตามคู่มือ (PROD): https://morpromt2f.moph.go.th</div>
+      </label>
+
+      <div class="actions">
+        <button type="submit" name="action" value="save" class="secondary">บันทึก</button>
+        <button type="submit" name="action" value="test" class="primary">บันทึก + ทดสอบส่ง</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<footer class="foot">
+  <svg class="wave" viewBox="0 0 1920 70" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 40 C 400 0, 800 70, 1200 30 S 1700 10, 1920 35 L1920 70 L0 70Z" fill="#8b6cf0" opacity=".18"/>
+    <path d="M0 55 C 500 25, 900 75, 1400 45 S 1800 40, 1920 50 L1920 70 L0 70Z" fill="#6d4ee8" opacity=".22"/>
+  </svg>
+  <div class="txt"><span>{{ hospital }} · ระบบติดตาม Sepsis Six Bundle</span><span>ข้อมูลจาก HOSxP</span></div>
+</footer>
+</body>
+</html>

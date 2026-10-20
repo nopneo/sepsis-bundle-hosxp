@@ -1,0 +1,10 @@
+/* ฝังฟอนต์ไว้ในแอป — ใช้ได้ใน intranet ไม่ต้องพึ่ง Google Fonts
+   ไม่ใช้ "TH Sarabun New" เพราะตัวเล็กกว่าฟอนต์ทั่วไปมากที่ขนาด px เท่ากัน อ่านยาก */
+@font-face { font-family: 'Sarabun'; font-weight: 400; font-display: swap;
+  src: url('fonts/Sarabun-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Sarabun'; font-weight: 600; font-display: swap;
+  src: url('fonts/Sarabun-SemiBold.ttf') format('truetype'); }
+@font-face { font-family: 'Sarabun'; font-weight: 700; font-display: swap;
+  src: url('fonts/Sarabun-Bold.ttf') format('truetype'); }
+@font-face { font-family: 'Kanit'; font-weight: 600; font-display: swap;
+  src: url('fonts/Kanit-SemiBold.ttf') format('truetype'); }

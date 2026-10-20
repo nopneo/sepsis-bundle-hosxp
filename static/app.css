@@ -1,0 +1,100 @@
+/* สไตล์ร่วมของทุกหน้า — ยึดภาษาภาพของ thai-infographic-slides:
+   พื้นลาเวนเดอร์ไล่สี การ์ดขาวมุมมน หัวเรื่อง Kanit ไล่สี pill ม่วง KPI tile gradient */
+:root {
+  color-scheme: light;
+  --ink: #2b2b55; --navy: #2e2a78; --muted: #6b6497; --line: #ece8f8;
+  --purple: #6d4ee8; --green: #047857; --red: #b91c1c; --amber: #92400e;
+}
+* { box-sizing: border-box; }
+html {
+  -webkit-text-size-adjust: 100%; min-height: 100%;
+  background:
+    radial-gradient(900px 600px at 95% 0%, rgba(196,181,253,.55), transparent 60%),
+    radial-gradient(700px 500px at 0% 100%, rgba(191,219,254,.6), transparent 60%),
+    linear-gradient(135deg, #f8f5ff 0%, #efe9ff 50%, #e9f0ff 100%);
+  background-color: #efe9ff;
+}
+body {
+  margin: 0; color: var(--ink); background: transparent;
+  font-family: "Sarabun", "Leelawadee UI", "Noto Sans Thai", sans-serif; font-size: 17px; line-height: 1.55;
+}
+.page { max-width: 1240px; margin: 0 auto; padding: 22px 20px 0; }
+
+/* ---------- header ---------- */
+.top { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.top .logo { width: 84px; height: 84px; object-fit: contain; flex: none; filter: drop-shadow(0 6px 10px rgba(60,40,140,.25)); }
+.ttl { min-width: 0; flex: 1 1 220px; }
+.ttl h1 {
+  margin: 0; font-family: "Kanit", sans-serif; font-weight: 600; font-size: 36px; line-height: 1.15;
+  background: linear-gradient(90deg, #3a2a9a, #7c4dff 60%, #c04fd6);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; padding: 3px 16px; border-radius: 40px;
+  background: linear-gradient(90deg, #6d4ee8, #9b6cf5); color: #fff;
+  font-family: "Kanit", sans-serif; font-weight: 600; font-size: 15.5px; box-shadow: 0 6px 14px rgba(109,78,232,.28);
+}
+.chip { margin-left: auto; text-align: right; font-family: "Kanit", sans-serif; }
+.chip .a {
+  display: inline-block; background: #fff; border-radius: 40px; padding: 6px 18px;
+  color: #5b3fd6; font-weight: 600; font-size: 16px; box-shadow: 0 4px 14px rgba(90,60,200,.15);
+}
+.chip .b { font-family: "Sarabun", sans-serif; font-size: 14.5px; color: var(--muted); margin-top: 6px; }
+
+/* ---------- cards / kpi ---------- */
+.card { background: #fff; border-radius: 22px; box-shadow: 0 10px 30px rgba(80,60,170,.10); padding: 20px 22px; }
+.ch { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 0 0 12px;
+      font-family: "Kanit", sans-serif; font-weight: 600; font-size: 19px; color: var(--navy); }
+.ch .ic { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: #efe9ff; font-size: 19px; flex: none; }
+.ch small { font-family: "Sarabun", sans-serif; font-weight: 400; font-size: 14.5px; color: var(--muted); }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+.kpi { position: relative; overflow: hidden; border-radius: 22px; padding: 16px 18px; color: #fff; box-shadow: 0 10px 24px rgba(80,60,170,.18); }
+.kpi .l { font-family: "Kanit", sans-serif; font-weight: 600; font-size: 15.5px; opacity: .95; padding-right: 40px; }
+.kpi .v { font-family: "Kanit", sans-serif; font-weight: 600; font-size: 40px; line-height: 1.1; margin-top: 4px; }
+.kpi .v small { font-size: 16px; font-weight: 600; margin-left: 4px; opacity: .95; }
+.kpi .n { font-size: 14.5px; opacity: .95; }
+.kpi .e { position: absolute; right: 14px; top: 10px; font-size: 32px; opacity: .9; }
+.g-purple { background: linear-gradient(135deg, #6d4ee8, #a47bf7); }
+.g-blue   { background: linear-gradient(135deg, #2f6fe4, #5fb0ff); }
+.g-orange { background: linear-gradient(135deg, #f08a0b, #fbbf46); }
+.g-green  { background: linear-gradient(135deg, #0ea877, #43d6a3); }
+.g-red    { background: linear-gradient(135deg, #e23b3b, #f77f7f); }
+
+.alert { display: flex; align-items: flex-start; gap: 12px; border-radius: 16px; padding: 12px 16px; font-size: 15.5px; margin-top: 12px; }
+.alert .ai { font-size: 22px; line-height: 1.2; }
+.alert b { font-family: "Kanit", sans-serif; font-weight: 600; }
+.alert.b { background: #e0ecff; border: 1.5px solid #93c5fd; color: #1e3a8a; }
+.alert.r { background: #ffe4e6; border: 1.5px solid #fca5a5; color: #991b1b; }
+.alert.y { background: #fff7d6; border: 1.5px solid #fcd34d; color: #78520a; }
+
+.pp { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 2px 12px; border-radius: 30px;
+      font-family: "Kanit", sans-serif; font-weight: 600; font-size: 14.5px; white-space: nowrap; min-width: 78px; }
+.pp.ok  { background: #d1fae5; color: #047857; }
+.pp.bad { background: #fee2e2; color: #b91c1c; }
+.pp.na  { background: #eef0f5; color: #64748b; }
+
+a.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; border-radius: 999px; text-decoration: none;
+        background: #fff; border: 1.5px solid #d9d2f5; color: var(--navy); font-family: "Kanit", sans-serif; font-weight: 600; font-size: 15px; }
+a.btn.active { background: var(--purple); border-color: var(--purple); color: #fff; box-shadow: 0 6px 14px rgba(109,78,232,.28); }
+
+/* ---------- footer ---------- */
+.foot { margin-top: 28px; position: relative; }
+.foot .wave { display: block; width: 100%; height: 46px; }
+.foot .txt { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+             padding: 0 20px 16px; max-width: 1240px; margin: -8px auto 0;
+             font-family: "Kanit", sans-serif; font-size: 14px; color: #7a6fb0; }
+
+@media (max-width: 900px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .page { padding: 16px 16px 0; }
+  .top { gap: 12px; }
+  .top .logo { width: 58px; height: 58px; }
+  .ttl { flex-basis: 180px; }
+  .ttl h1 { font-size: 26px; }
+  .pill { font-size: 13.5px; padding: 3px 12px; }
+  .chip { margin-left: 0; text-align: left; width: 100%; }
+  .kpi .v { font-size: 32px; }
+  .card { padding: 16px; border-radius: 18px; }
+}

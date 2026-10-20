@@ -1,0 +1,20 @@
+
+.env
+data/
+__pycache__/
+*.pyc
+dist/
+hosxp_script/_vendor/
+hosxp_alert/backups/
+hosxp_alert/_vendor/
+.publish_forbidden
+# เครื่องมือ deploy/ทดสอบเฉพาะระบบภายใน รพ.วังน้ำเขียว (มี IP/บัญชี/โครงสร้างเซิร์ฟเวอร์) — ไม่เผยแพร่
+deploy_ssh.py
+ssh_connect.py
+install_ssh_key.py
+set_env.py
+hosxp_script/
+# ไฟล์ที่ไม่ใช่ของโครงการ / ลิขสิทธิ์ผู้อื่น
+sepsis.jpg
+คู่มือการใช้งานสำหรับ MOPH Notify/
+package/_manual_render.html
