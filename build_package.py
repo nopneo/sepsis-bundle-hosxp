@@ -10,6 +10,7 @@
 import json
 import os
 import shutil
+import tempfile
 import zipfile
 from datetime import date
 
@@ -20,7 +21,9 @@ TH_MONTH = ["มกราคม", "กุมภาพันธ์", "มีน�
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PKG = os.path.join(ROOT, "package")
 NAME = f"sepsis_bundle_v{VERSION}"
-STAGE = os.path.join(ROOT, "dist", NAME)
+# สร้างในโฟลเดอร์ชั่วคราว — ไม่ติดไฟล์ใน dist/ ที่อาจถูกเปิดค้าง (เช่นคู่มือ PDF) แล้วค่อยคัดลอกออก
+STAGE = os.path.join(tempfile.mkdtemp(prefix="sepsis_pkg_"), NAME)
+DIST_COPY = os.path.join(ROOT, "dist", NAME)
 MANUAL_PDF = "คู่มือ-Sepsis-Six-Bundle.pdf"
 
 APP_FILES = ["app.py", "config.py", "db.py", "queries.py", "nurse_notes.py", "flex.py", "moph_notify.py",
@@ -46,7 +49,6 @@ def write_text(path, text, newline, bom=False):
 
 
 def stage():
-    shutil.rmtree(STAGE, ignore_errors=True)
     os.makedirs(STAGE)
     for f in APP_FILES + ["LICENSE", "NOTICE"]:
         shutil.copy2(os.path.join(ROOT, f), STAGE)
@@ -139,4 +141,13 @@ if __name__ == "__main__":
     render_manual()
     safety_check()
     out = make_zip()
+    try:   # สำเนาแบบแตกไฟล์ไว้ดูใน dist/ (ข้ามได้ถ้ามีไฟล์เดิมเปิดค้าง)
+        shutil.rmtree(DIST_COPY)
+    except OSError:
+        pass
+    try:
+        shutil.copytree(STAGE, DIST_COPY, dirs_exist_ok=True)
+    except OSError as exc:
+        print("  (ไม่ได้อัปเดตโฟลเดอร์ dist/ แบบแตกไฟล์: มีไฟล์เปิดค้าง —", type(exc).__name__, ")")
+    shutil.rmtree(os.path.dirname(STAGE), ignore_errors=True)
     print(f"  เสร็จ: {out} ({os.path.getsize(out) / 1024:.0f} KB)")
