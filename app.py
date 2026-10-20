@@ -159,6 +159,7 @@ def _date_range():
 
 @app.route("/")
 def dashboard():
+    session.pop("settings_until", None)  # ออกจากหน้าตั้งค่าแล้ว — เข้าใหม่ต้องกรอกรหัสอีกครั้ง
     d1, d2, notice = _date_range()
     results = queries.build(d1=d1, d2=d2)
     today = date.today()
@@ -179,22 +180,35 @@ def _safe_next():
     return nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("dashboard")
 
 
+#: หน้าตั้งค่าถามรหัสทุกครั้งที่เข้า — ปลดล็อกแล้วใช้ได้ช่วงสั้น ๆ พอกรอก/ทดสอบส่ง (แยกจากการปลดดู HN/AN)
+SETTINGS_UNLOCK_SECONDS = 10 * 60
+
+
+def settings_unlocked():
+    return session.get("settings_until", 0) > time.time()
+
+
 @app.route("/unlock", methods=["GET", "POST"])
 def unlock():
+    scope = "settings" if request.values.get("scope") == "settings" else "view"
     error = None
     if request.method == "POST":
         if VIEW_PASSWORD_HASH and check_password_hash(VIEW_PASSWORD_HASH, request.form.get("password", "")):
             session.permanent = True
-            session["unlocked"] = True
+            if scope == "settings":
+                session["settings_until"] = time.time() + SETTINGS_UNLOCK_SECONDS
+            else:
+                session["unlocked"] = True
             return redirect(_safe_next())
         time.sleep(1)  # หน่วงการเดารหัส
         error = "รหัสไม่ถูกต้อง"
-    return render_template("unlock.html", error=error, next=request.values.get("next", ""))
+    return render_template("unlock.html", error=error, next=request.values.get("next", ""), scope=scope)
 
 
 @app.route("/lock", methods=["POST"])
 def lock():
     session.pop("unlocked", None)
+    session.pop("settings_until", None)
     return redirect(url_for("dashboard"))
 
 
@@ -240,8 +254,8 @@ def _settings_guard():
 
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
-    if VIEW_PASSWORD_HASH and not unlocked():  # ตั้งรหัสดู HN/AN ไว้ = ใช้รหัสเดียวกันเปิดหน้านี้
-        return redirect(url_for("unlock", next=request.full_path))
+    if VIEW_PASSWORD_HASH and not settings_unlocked():  # ถามรหัส (ตัวเดียวกับดู HN/AN) ทุกครั้งที่เข้า
+        return redirect(url_for("unlock", scope="settings", next=url_for("settings")))
     denied = _settings_guard()
     if denied:
         return denied

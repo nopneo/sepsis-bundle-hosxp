@@ -2,6 +2,7 @@
 
 import json
 
+import flask
 import pytest
 from werkzeug.security import generate_password_hash
 
@@ -17,7 +18,10 @@ def client(fake_db, monkeypatch):
     monkeypatch.setattr(app_mod, "VIEW_PASSWORD_HASH", generate_password_hash("pw-test", method="pbkdf2:sha256"))
     monkeypatch.setattr(app_mod, "SETTINGS_PASSWORD", "")
     monkeypatch.setattr(app_mod.queries, "build", lambda d1, d2: [dict(CASE)])
-    monkeypatch.setattr(app_mod.queries, "summary", lambda r: None)
+    empty = app_mod.queries.summary([])
+    monkeypatch.setattr(app_mod.queries, "summary", lambda r: empty)
+    monkeypatch.setattr(app_mod, "render_template",
+                        lambda name, **kw: name if name == "dashboard.html" else flask.render_template(name, **kw))
     monkeypatch.setattr(app_mod.time, "sleep", lambda s: None)
     app_mod.app.config["TESTING"] = True
     return app_mod.app.test_client()
@@ -38,11 +42,20 @@ def test_unlock_ignores_external_next(client):
     assert r.headers["Location"] == "/"
 
 
-def test_settings_needs_unlock_even_from_server(client):
+def test_settings_asks_password_every_visit(client):
     r = client.get("/settings", environ_base={"REMOTE_ADDR": "127.0.0.1"})
-    assert r.status_code == 302 and "/unlock" in r.headers["Location"]
-    client.post("/unlock", data={"password": "pw-test"})
+    assert r.status_code == 302 and "scope=settings" in r.headers["Location"]
+    client.post("/unlock", data={"password": "pw-test"})                 # ปลดดู HN/AN อย่างเดียว
+    assert client.get("/settings").status_code == 302                   # ยังเข้าหน้าตั้งค่าไม่ได้
+    client.post("/unlock", data={"password": "pw-test", "scope": "settings"})
     assert client.get("/settings", environ_base={"REMOTE_ADDR": "10.0.0.5"}).status_code == 200
+    client.get("/")                                                     # กลับแดชบอร์ด
+    assert client.get("/settings").status_code == 302                   # เข้าใหม่ต้องกรอกอีก
+
+
+def test_settings_unlock_does_not_reveal_hn(client):
+    client.post("/unlock", data={"password": "pw-test", "scope": "settings"})
+    assert client.get("/api/data.json").json[0]["hn"] == "xxx"
 
 
 def test_line_messages_have_no_real_ids():

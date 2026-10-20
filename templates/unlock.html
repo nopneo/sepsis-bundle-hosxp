@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>กรอกรหัสดู HN/AN — Sepsis Six Bundle</title>
+<title>กรอกรหัส — Sepsis Six Bundle</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='fonts.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
@@ -28,7 +28,7 @@
     <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="โลโก้{{ hospital }}">
     <div class="ttl">
       <h1>Sepsis Six Bundle</h1>
-      <span class="pill">🔒 ข้อมูลระบุตัวผู้ป่วย</span>
+      <span class="pill">🔒 {{ 'หน้าตั้งค่าแจ้งเตือน' if scope == 'settings' else 'ข้อมูลระบุตัวผู้ป่วย' }}</span>
     </div>
     <div class="chip"><a class="btn" href="{{ url_for('dashboard') }}">← กลับหน้าแดชบอร์ด</a></div>
   </header>
@@ -36,12 +36,13 @@
   <div class="narrow">
     {% if error %}<div class="flash">{{ error }}</div>{% endif %}
     <form method="post" class="card">
-      <div class="ch"><span class="ic">🔑</span>กรอกรหัสเพื่อดู HN/AN</div>
+      <div class="ch"><span class="ic">🔑</span>{{ 'กรอกรหัสเพื่อเข้าหน้าตั้งค่าแจ้งเตือน' if scope == 'settings' else 'กรอกรหัสเพื่อดู HN/AN' }}</div>
       <input type="hidden" name="next" value="{{ next }}">
+      <input type="hidden" name="scope" value="{{ scope }}">
       <label>รหัส
         <input type="password" name="password" autocomplete="off" autofocus required>
       </label>
-      <div class="hint">ปลดล็อกแล้วจะเห็น HN/AN และหน้าตั้งค่า ได้นาน 8 ชั่วโมงบนเบราว์เซอร์นี้ หรือจนกว่าจะกด "ซ่อน HN/AN"</div>
+      <div class="hint">{% if scope == 'settings' %}ต้องกรอกรหัสทุกครั้งที่เข้าหน้าตั้งค่า (ใช้ได้ 10 นาทีหลังกรอก){% else %}ปลดล็อกแล้วจะเห็น HN/AN บนเบราว์เซอร์นี้ จนกว่าจะกด "ซ่อน HN/AN" หรือครบเวลาที่ตั้งไว้{% endif %}</div>
       <div class="actions"><button type="submit">ปลดล็อก</button></div>
     </form>
   </div>

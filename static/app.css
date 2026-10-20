@@ -73,7 +73,7 @@ body {
 .pp.bad { background: #fee2e2; color: #b91c1c; }
 .pp.na  { background: #eef0f5; color: #64748b; }
 
-a.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; border-radius: 999px; text-decoration: none;
+a.btn, button.btn { cursor: pointer; line-height: inherit; display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; border-radius: 999px; text-decoration: none;
         background: #fff; border: 1.5px solid #d9d2f5; color: var(--navy); font-family: "Kanit", sans-serif; font-weight: 600; font-size: 15px; }
 a.btn.active { background: var(--purple); border-color: var(--purple); color: #fff; box-shadow: 0 6px 14px rgba(109,78,232,.28); }
 
