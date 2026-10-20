@@ -125,12 +125,15 @@ def _dispo_text(d):
     return text
 
 
+MASK = "xxx"  # ไม่ส่ง HN/AN/VN จริงออกไป LINE — ดูเลขจริงได้ที่แดชบอร์ดหลังกรอกรหัส
+
+
 def _patient_card(an, vn, hn, ward, bed, icd10, time_zero_label, time_zero, dispo=None):
     rows = [
         _card_title("🧾", "ข้อมูลผู้ป่วย"),
         {"type": "separator", "color": "#ece8f8"},
-        _kv("AN", an) if an else _kv("VN", vn),
-        _kv("HN", hn),
+        _kv("AN" if an else "VN", MASK),
+        _kv("HN", MASK),
         _kv("หอผู้ป่วย", f"{ward or '-'}" + (f"  ·  เตียง {bed}" if bed and bed != "-" else "")),
         _kv("ICD-10", icd10),
         _kv(time_zero_label, time_zero),
@@ -269,9 +272,8 @@ def new_case(case, time_zero, window_min, test=False, tz_label="เริ่ม�
     ]
     if triage:
         body.insert(2, _triage_card(triage))
-    label = "AN" if case.get("an") else "VN"
     when = f"เลยกำหนด {overdue} นาที" if overdue > 0 else f"ทำ Sepsis Six ให้ครบภายใน {deadline:%H:%M} น."
-    alt = f"🚨 พบผู้ป่วยสงสัย Sepsis รายใหม่ {label} {case.get('case_key')} — {when}"
+    alt = f"🚨 พบผู้ป่วยสงสัย Sepsis รายใหม่ — {when}"
     return {
         "type": "flex", "altText": alt[:400],
         "contents": _bubble(
@@ -393,8 +395,7 @@ def bundle_result(result, test=False):
                                         color="#78520a", weight="bold")]})
 
     verdict = "ผ่านเกณฑ์" if ok else "ไม่ผ่านเกณฑ์"
-    label = "AN" if result.get("an") else "VN"
-    alt = f"🔔 ผล Sepsis Six Bundle {label} {result['case_key']}: {verdict} ({passed}/4 ข้อที่ตรวจอัตโนมัติ)"
+    alt = f"🔔 ผล Sepsis Six Bundle {verdict} ({passed}/4 ข้อที่ตรวจอัตโนมัติ)"
     return {
         "type": "flex", "altText": alt[:400],
         "contents": _bubble(

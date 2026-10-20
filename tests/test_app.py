@@ -12,6 +12,7 @@ import moph_notify
 @pytest.fixture
 def client(fake_db, monkeypatch):
     monkeypatch.setattr(app_mod, "SETTINGS_PASSWORD", "")
+    monkeypatch.setattr(app_mod, "VIEW_PASSWORD_HASH", "")
     app_mod.app.config["TESTING"] = True
     return app_mod.app.test_client()
 

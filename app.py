@@ -9,10 +9,13 @@ production:  gunicorn -b 0.0.0.0:5500 app:app    (แนะนำให้ใช
 import hmac
 import ipaddress
 import os
+import secrets
+import time
 from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash
 
 import config
 import db
@@ -42,6 +45,30 @@ class PrefixMiddleware:
 
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
+# ต้องตั้ง SEPSIS_SECRET_KEY ใน .env เมื่อรัน gunicorn หลาย worker ไม่งั้นสถานะปลดล็อกจะหลุดสลับไปมา
+app.secret_key = os.getenv("SEPSIS_SECRET_KEY") or secrets.token_hex(32)
+app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SEPSIS_UNLOCK_HOURS", "8")))
+
+# รหัสดู HN/AN — เก็บเฉพาะ hash (generate_password_hash(pw, method="pbkdf2:sha256")) ไม่เก็บรหัสจริง
+# ไม่ตั้งค่า = แสดง HN/AN ตามปกติ (แบบเดิม)
+VIEW_PASSWORD_HASH = os.getenv("SEPSIS_VIEW_PASSWORD_HASH", "").strip()
+MASK = "xxx"
+
+
+def unlocked():
+    return not VIEW_PASSWORD_HASH or session.get("unlocked") is True
+
+
+def masked(results):
+    """ซ่อน HN/AN/VN จนกว่าจะกรอกรหัส"""
+    if unlocked():
+        return results
+    return [dict(r, hn=MASK, vn=MASK, case_key=MASK, an=MASK if r.get("an") else r.get("an")) for r in results]
+
+
+@app.context_processor
+def lock_state():
+    return {"locked": not unlocked(), "lock_enabled": bool(VIEW_PASSWORD_HASH)}
 
 
 @app.teardown_appcontext
@@ -135,7 +162,7 @@ def dashboard():
     d1, d2, notice = _date_range()
     results = queries.build(d1=d1, d2=d2)
     today = date.today()
-    return render_template("dashboard.html", results=results, s=queries.summary(results),
+    return render_template("dashboard.html", results=masked(results), s=queries.summary(results),
                            d1=d1, d2=d2, today=today, period=period_label(d1, d2),
                            quick=quick_ranges(today), notice=notice, updated=datetime.now(),
                            lac_h=queries.LACTATE_REPEAT_HOURS)
@@ -144,7 +171,31 @@ def dashboard():
 @app.route("/api/data.json")
 def api_data():
     d1, d2, _ = _date_range()
-    return jsonify(queries.build(d1=d1, d2=d2))
+    return jsonify(masked(queries.build(d1=d1, d2=d2)))
+
+
+def _safe_next():
+    nxt = request.values.get("next", "")
+    return nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("dashboard")
+
+
+@app.route("/unlock", methods=["GET", "POST"])
+def unlock():
+    error = None
+    if request.method == "POST":
+        if VIEW_PASSWORD_HASH and check_password_hash(VIEW_PASSWORD_HASH, request.form.get("password", "")):
+            session.permanent = True
+            session["unlocked"] = True
+            return redirect(_safe_next())
+        time.sleep(1)  # หน่วงการเดารหัส
+        error = "รหัสไม่ถูกต้อง"
+    return render_template("unlock.html", error=error, next=request.values.get("next", ""))
+
+
+@app.route("/lock", methods=["POST"])
+def lock():
+    session.pop("unlocked", None)
+    return redirect(url_for("dashboard"))
 
 
 #: รหัสผ่านหน้า /settings (ชื่อผู้ใช้อะไรก็ได้) — ไม่ตั้ง = เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์เอง
@@ -166,7 +217,9 @@ def _settings_guard():
 
     คืน Response เมื่อไม่อนุญาต, None เมื่อผ่าน
     """
-    if SETTINGS_PASSWORD:
+    if VIEW_PASSWORD_HASH:
+        pass                    # ปลดล็อกด้วยรหัสดู HN/AN แล้ว (ตรวจใน settings())
+    elif SETTINGS_PASSWORD:
         auth = request.authorization
         if not (auth and auth.password
                 and hmac.compare_digest(auth.password.encode(), SETTINGS_PASSWORD.encode())):
@@ -187,6 +240,8 @@ def _settings_guard():
 
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
+    if VIEW_PASSWORD_HASH and not unlocked():  # ตั้งรหัสดู HN/AN ไว้ = ใช้รหัสเดียวกันเปิดหน้านี้
+        return redirect(url_for("unlock", next=request.full_path))
     denied = _settings_guard()
     if denied:
         return denied

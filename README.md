@@ -65,6 +65,11 @@ URL ค่าเริ่มต้น `https://morpromt2f.moph.go.th` (รับ
 **หน้า `/settings` ต้องใส่รหัสผ่าน** `SEPSIS_SETTINGS_PASSWORD` ใน `.env` (ชื่อผู้ใช้อะไรก็ได้) — ถ้าไม่ตั้ง
 เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์เอง (`http://127.0.0.1:<port>/settings`) เพราะใครแก้หน้านี้ได้ก็เปลี่ยนปลายทางการแจ้งเตือนได้
 
+**ซ่อน HN/AN** — การ์ด LINE แสดง HN/AN/VN เป็น `xxx` เสมอ (ทีมดูหอผู้ป่วย/เตียงแทน) ส่วนแดชบอร์ดซ่อนไว้จนกว่าจะกด
+"🔒 ดู HN/AN" แล้วกรอกรหัส (ปลดล็อก `SEPSIS_UNLOCK_HOURS` ชม. ต่อเบราว์เซอร์) ตั้งใน `.env` เป็น hash เท่านั้น:
+`SEPSIS_VIEW_PASSWORD_HASH` (สร้างด้วย `generate_password_hash(รหัส, method="pbkdf2:sha256")`) และ `SEPSIS_SECRET_KEY`
+— เมื่อตั้งแล้ว หน้า `/settings` ใช้รหัสเดียวกันนี้แทน `SEPSIS_SETTINGS_PASSWORD` · ไม่ตั้ง = แสดง HN/AN ตามปกติ
+
 ถ้ายังไม่ได้ตั้งค่า MOPH Notify, `scheduler.py` จะ fallback ไปใช้ LINE Messaging API (`notify.py`
 + `.env`) แทนโดยอัตโนมัติ — ตั้งอย่างใดอย่างหนึ่งก็พอ
 

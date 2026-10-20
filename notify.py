@@ -4,7 +4,7 @@
 ปลายเดือนมีนาคม 2025 — ต้องสร้าง LINE Official Account + Messaging API Channel เอง
 แล้วเอา Channel access token (long-lived) มาใส่ .env และหา userId/groupId ปลายทาง
 
-ห้ามใส่ชื่อ-นามสกุลผู้ป่วยในข้อความ ส่งแค่ HN/AN/ward/เตียง ตามหลักความเป็นส่วนตัว
+ห้ามใส่ชื่อ-นามสกุลผู้ป่วยในข้อความ ส่งแค่ ward/เตียง (HN/AN แสดงเป็น xxx) ตามหลักความเป็นส่วนตัว
 (ข้อมูลผู้ป่วยต้องไม่ออกนอกระบบ รพ. โดยไม่จำเป็น)
 """
 
@@ -36,7 +36,7 @@ def send_line(text):
 def format_new_case_message(case):
     return (
         "🚨 พบผู้ป่วยสงสัย Sepsis รายใหม่\n"
-        f"{'AN' if case.get('an') else 'VN'}: {case['case_key']}  HN: {case['hn']}\n"
+        f"{'AN' if case.get('an') else 'VN'}: xxx  HN: xxx\n"
         f"Ward: {case.get('ward_name') or '-'}  เตียง: {case.get('cur_bedno') or '-'}\n"
         f"ICD10: {case.get('icd10_list')}"
     )
@@ -45,7 +45,7 @@ def format_new_case_message(case):
 def format_bundle_message(result):
     lines = [
         "🔔 ผล Sepsis Six Bundle",
-        f"{'AN' if result.get('an') else 'VN'}: {result['case_key']}  HN: {result['hn']}",
+        f"{'AN' if result.get('an') else 'VN'}: xxx  HN: xxx",
         f"Ward: {result.get('ward_name') or '-'}  เตียง: {result.get('bed') or '-'}",
         f"ICD10: {result.get('icd10')}",
         f"Time-zero ({result['time_zero_mode']}): {result['time_zero']}",
