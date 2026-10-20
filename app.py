@@ -6,12 +6,16 @@ production:  gunicorn -b 0.0.0.0:5500 app:app    (แนะนำให้ใช
                                                     เพราะเป็นข้อมูลผู้ป่วย)
 """
 
+import hmac
+import ipaddress
 import os
 from datetime import date, datetime, timedelta
+from urllib.parse import urlsplit
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 import config
+import db
 import flex
 import moph_notify
 import queries
@@ -38,6 +42,12 @@ class PrefixMiddleware:
 
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
+
+
+@app.teardown_appcontext
+def _close_db(_exc):
+    """คืน connection ของ request นี้ (db.py ใช้ connection เดียวทุกคำสั่งใน request)"""
+    db.close()
 
 
 @app.context_processor
@@ -137,12 +147,59 @@ def api_data():
     return jsonify(queries.build(d1=d1, d2=d2))
 
 
+#: รหัสผ่านหน้า /settings (ชื่อผู้ใช้อะไรก็ได้) — ไม่ตั้ง = เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์เอง
+SETTINGS_PASSWORD = os.getenv("SEPSIS_SETTINGS_PASSWORD", "")
+
+
+def _from_server_itself():
+    """เปิดจากเครื่องที่รันแอปเอง (127.0.0.1) และไม่ได้ผ่าน reverse proxy"""
+    if request.headers.get("X-Forwarded-For") or request.headers.get("X-Forwarded-Prefix"):
+        return False
+    try:
+        return ipaddress.ip_address(request.remote_addr or "").is_loopback
+    except ValueError:
+        return False
+
+
+def _settings_guard():
+    """กันหน้า /settings — ใครแก้ได้ก็เปลี่ยนปลายทางแจ้งเตือน (และส่ง key ของกลุ่ม LINE ออกไป) ได้
+
+    คืน Response เมื่อไม่อนุญาต, None เมื่อผ่าน
+    """
+    if SETTINGS_PASSWORD:
+        auth = request.authorization
+        if not (auth and auth.password
+                and hmac.compare_digest(auth.password.encode(), SETTINGS_PASSWORD.encode())):
+            return Response("ต้องใส่รหัสผ่านหน้าตั้งค่า (SEPSIS_SETTINGS_PASSWORD ใน .env)", 401,
+                            {"WWW-Authenticate": 'Basic realm="Sepsis Bundle settings", charset="UTF-8"'},
+                            mimetype="text/plain")
+    elif not _from_server_itself():
+        return Response("หน้าตั้งค่าเปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์ (http://127.0.0.1:<พอร์ต>/settings)\n"
+                        "ถ้าต้องการเปิดจากเครื่องอื่น ให้ตั้ง SEPSIS_SETTINGS_PASSWORD ใน .env แล้วรีสตาร์ตแอป",
+                        403, mimetype="text/plain")
+    # กันเว็บอื่นแอบส่งฟอร์มมาแทนผู้ใช้ (เบราว์เซอร์แนบรหัสผ่านที่จำไว้ให้เอง)
+    if request.method == "POST":
+        origin = request.headers.get("Origin") or request.headers.get("Referer")
+        if origin and urlsplit(origin).netloc != request.host:
+            return Response("ส่งฟอร์มจากหน้าอื่นไม่ได้", 403, mimetype="text/plain")
+    return None
+
+
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
+    denied = _settings_guard()
+    if denied:
+        return denied
     message = error = None
     if request.method == "POST":
+        base_url = request.form.get("base_url", "").strip() or moph_notify.DEFAULT_BASE_URL
+        if not moph_notify.allowed_base_url(base_url):
+            data = moph_notify.load_settings()
+            return render_template("settings.html", s=data, message=None,
+                                   error=f"URL ต้องเป็น https:// ของโดเมน moph.go.th เท่านั้น (ได้รับ {base_url})",
+                                   configured=moph_notify.is_configured(data))
         values = {
-            "base_url": request.form.get("base_url", "").strip() or moph_notify.DEFAULT_BASE_URL,
+            "base_url": base_url,
             "client_key": request.form.get("client_key", "").strip(),
         }
         secret_key = request.form.get("secret_key", "").strip()
@@ -178,4 +235,8 @@ def healthz():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5500")), debug=True)
+    # debug ปิดเป็นค่าเริ่มต้น — ตัว debugger ของ Werkzeug สั่งรันโค้ดบนเครื่องได้ และแอปนี้มีข้อมูลผู้ป่วย
+    # เปิดด้วย FLASK_DEBUG=1 เฉพาะตอนพัฒนา และจะฟังแค่ 127.0.0.1 (เครื่องอื่นใน LAN เข้าไม่ได้)
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host="127.0.0.1" if debug else os.getenv("SEPSIS_HOST", "0.0.0.0"),
+            port=int(os.getenv("PORT", "5500")), debug=debug)

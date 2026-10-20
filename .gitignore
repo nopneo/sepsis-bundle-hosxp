@@ -18,3 +18,5 @@ hosxp_script/
 sepsis.jpg
 คู่มือการใช้งานสำหรับ MOPH Notify/
 package/_manual_render.html
+.venv/
+.pytest_cache/

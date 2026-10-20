@@ -28,6 +28,8 @@
    - **Windows:** ดับเบิลคลิก `install_windows.bat`
 3. ตรวจรหัส lab/ยาที่สคริปต์เติมให้ใน `.env` กับห้อง lab/ห้องยา (`python setup_check.py`)
 4. เปิด `http://<IP เครื่อง>:5800/settings` กรอก Client Key / Secret Key ของกลุ่ม MOPH Notify แล้วกดทดสอบส่ง
+   — หน้านี้ต้องใส่รหัสผ่าน `SEPSIS_SETTINGS_PASSWORD` ใน `.env` (Linux: `install.sh` สร้างให้)
+   ถ้าไม่ตั้ง เปิดได้เฉพาะบนเครื่องเซิร์ฟเวอร์ที่ `http://127.0.0.1:5800/settings`
 5. เปลี่ยนโลโก้ที่ `static/logo.png` (ไม่บังคับ)
 
 ## สำคัญ

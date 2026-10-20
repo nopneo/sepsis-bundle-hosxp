@@ -85,6 +85,13 @@ PYEOF
   unset DB_PASS
   umask 022
 fi
+# รหัสผ่านหน้า /settings — เซิร์ฟเวอร์ Linux มักไม่มีเบราว์เซอร์ จึงสร้างให้ ใช้เปิดจากเครื่องอื่นใน LAN
+if ! grep -q '^SEPSIS_SETTINGS_PASSWORD=.' "$ENV"; then
+  SETTINGS_PW="$("$PY" -c 'import secrets; print(secrets.token_urlsafe(9))')"
+  { echo; echo "# รหัสผ่านหน้า /settings (สร้างโดย install.sh · ชื่อผู้ใช้อะไรก็ได้)"
+    echo "SEPSIS_SETTINGS_PASSWORD=$SETTINGS_PW"; } >> "$ENV"
+  echo "สร้างรหัสผ่านหน้า /settings ให้แล้ว: $SETTINGS_PW  (เก็บไว้ใน $ENV)"
+fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 chmod 600 "$ENV"
 chmod 700 "$APP_DIR/data"
@@ -132,7 +139,7 @@ if ! command -v crontab >/dev/null 2>&1; then
 fi
 cat > /etc/cron.d/sepsis-bundle <<EOF
 # Sepsis Six Bundle — ดึงเคสใหม่และแจ้งเตือนทุก 15 นาที
-*/15 * * * * $APP_USER cd $APP_DIR && .venv/bin/python scheduler.py >> data/scheduler.log 2>&1
+*/15 * * * * $APP_USER cd $APP_DIR && .venv/bin/python scheduler.py >> data/scheduler_error.log 2>&1
 EOF
 chmod 644 /etc/cron.d/sepsis-bundle
 if systemctl is-active --quiet firewalld 2>/dev/null; then
@@ -154,6 +161,7 @@ cat <<EOF
 ติดตั้งเสร็จแล้ว
   แดชบอร์ด     : http://${IP:-<ip-เครื่องนี้>}:$PORT/
   ตั้งค่าแจ้งเตือน : http://${IP:-<ip-เครื่องนี้>}:$PORT/settings  (กรอก Client Key / Secret Key ของ MOPH Notify)
+                  รหัสผ่าน = SEPSIS_SETTINGS_PASSWORD ใน $ENV
   ไฟล์ตั้งค่า     : $ENV
   log แจ้งเตือน   : $APP_DIR/data/scheduler.log
   ตรวจซ้ำ       : cd $APP_DIR && sudo -u $APP_USER .venv/bin/python setup_check.py

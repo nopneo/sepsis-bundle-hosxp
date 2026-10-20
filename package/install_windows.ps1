@@ -71,8 +71,8 @@ if (Test-Path $EnvPath) {
     [IO.File]::WriteAllLines($EnvPath, $lines, $Utf8NoBom)   # python-dotenv อ่าน BOM ไม่ได้
     $vals["DB_PASS"] = $null
 }
-# .env อ่านได้เฉพาะ Administrators และ SYSTEM
-icacls $EnvPath /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" | Out-Null
+# .env อ่านได้เฉพาะ Administrators, SYSTEM และบัญชี LOCAL SERVICE ที่รันแอป (อ่านอย่างเดียว)
+icacls $EnvPath /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" "*S-1-5-19:R" | Out-Null
 
 # ------------------------------------------------------- 4. venv + ไลบรารี
 Say "4/7 สร้าง virtualenv และติดตั้งไลบรารี (ต้องออกอินเทอร์เน็ตไป pypi.org ได้)"
@@ -94,21 +94,29 @@ if ($rc -ne 0) { Die "ตรวจไม่ผ่าน — แก้ค่า�
 Say "6/7 ตั้งให้เว็บเปิดเองตอนเปิดเครื่อง + งานแจ้งเตือนทุก 15 นาที"
 $set = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 `
         -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-$sys = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+# รันด้วย LOCAL SERVICE (สิทธิ์ต่ำ) แทน SYSTEM — ถ้าเว็บถูกเจาะจะไม่ได้สิทธิ์สูงสุดของเครื่อง
+# ให้อ่าน/รันโปรแกรมในโฟลเดอร์แอป และเขียนได้เฉพาะ data\ (ฐานกันแจ้งซ้ำ, log, ค่า MOPH Notify)
+$svc = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\LOCAL SERVICE" -LogonType ServiceAccount -RunLevel Limited
+New-Item -ItemType Directory -Force "$AppDir\data" | Out-Null
+icacls $AppDir /grant "*S-1-5-19:(OI)(CI)RX" | Out-Null
+icacls "$AppDir\data" /grant "*S-1-5-19:(OI)(CI)M" /T | Out-Null
+# venv ชี้ไปที่ Python ตัวหลัก ซึ่งอาจติดตั้งไว้ในโปรไฟล์ของผู้ดูแล — ให้ LOCAL SERVICE อ่าน/รันได้ด้วย
+$PyBase = (& $VPy -c "import sys; print(sys.base_prefix)").Trim()
+icacls $PyBase /grant "*S-1-5-19:(OI)(CI)RX" | Out-Null
 
 Stop-ScheduledTask -TaskName "SepsisBundle-Web" -ErrorAction SilentlyContinue
 $webAction = New-ScheduledTaskAction -Execute "$AppDir\.venv\Scripts\waitress-serve.exe" `
         -Argument "--listen=0.0.0.0:$Port --threads=8 app:app" -WorkingDirectory $AppDir
 Register-ScheduledTask -TaskName "SepsisBundle-Web" -Action $webAction -Trigger (New-ScheduledTaskTrigger -AtStartup) `
-        -Settings $set -Principal $sys -Description "Sepsis Six Bundle dashboard" -Force | Out-Null
+        -Settings $set -Principal $svc -Description "Sepsis Six Bundle dashboard" -Force | Out-Null
 
 $jobAction = New-ScheduledTaskAction -Execute "cmd.exe" `
-        -Argument "/c .venv\Scripts\python.exe scheduler.py >> data\scheduler.log 2>&1" -WorkingDirectory $AppDir
+        -Argument "/c .venv\Scripts\python.exe scheduler.py >> data\scheduler_error.log 2>&1" -WorkingDirectory $AppDir
 $jobTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15)
 $jobSet = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -StartWhenAvailable `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName "SepsisBundle-Scheduler" -Action $jobAction -Trigger $jobTrigger `
-        -Settings $jobSet -Principal $sys -Description "Sepsis Six Bundle alerts every 15 minutes" -Force | Out-Null
+        -Settings $jobSet -Principal $svc -Description "Sepsis Six Bundle alerts every 15 minutes" -Force | Out-Null
 
 $rule = "Sepsis Bundle $Port"
 if (-not (Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue)) {
@@ -134,7 +142,8 @@ Write-Host @"
 
 ติดตั้งเสร็จแล้ว
   แดชบอร์ด     : http://${ip}:$Port/
-  ตั้งค่าแจ้งเตือน : http://${ip}:$Port/settings  (กรอก Client Key / Secret Key ของ MOPH Notify)
+  ตั้งค่าแจ้งเตือน : http://127.0.0.1:$Port/settings  (เปิดบนเครื่องนี้ · กรอก Client Key / Secret Key ของ MOPH Notify)
+                  เปิดจากเครื่องอื่นได้เมื่อตั้ง SEPSIS_SETTINGS_PASSWORD ใน .env
   ไฟล์ตั้งค่า     : $EnvPath
   log แจ้งเตือน   : $AppDir\data\scheduler.log
 "@

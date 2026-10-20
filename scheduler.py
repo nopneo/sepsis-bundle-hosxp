@@ -7,20 +7,37 @@
 กันไม่ให้ยิงซ้ำ ไม่ต้องมี DB แยกต่างหาก
 
 ตัวอย่าง crontab (ทุก 15 นาที):
-    */15 * * * * cd /opt/sepsis_bundle && .venv/bin/python scheduler.py >> data/scheduler.log 2>&1
+    */15 * * * * cd /opt/sepsis_bundle && .venv/bin/python scheduler.py >> data/scheduler_error.log 2>&1
+
+บันทึกการทำงานอยู่ที่ data/scheduler.log (หมุนไฟล์เองเมื่อเกิน 1 MB เก็บ 5 ไฟล์)
+รอบก่อนยังไม่จบ = รอบนี้ข้ามไปเลย (ล็อกไฟล์ data/scheduler.lock) — กันการ์ดเคสเดียวกันถูกส่งซ้ำ
 """
 
+import logging
+import logging.handlers
 import os
 import sqlite3
 from datetime import datetime, timedelta
 
+try:
+    import fcntl                # Linux/macOS
+except ImportError:             # Windows
+    fcntl = None
+    import msvcrt
+
+import db
 import flex
 import moph_notify
 import notify
 from queries import (BUNDLE_WINDOW_MIN, TIME_ZERO_LABEL, bundle_status, find_sepsis_cases,
                      time_zero_info, triage_info)
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "sepsis_bundle.sqlite")
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DB_PATH = os.path.join(DATA_DIR, "sepsis_bundle.sqlite")
+LOCK_PATH = os.path.join(DATA_DIR, "scheduler.lock")
+LOG_PATH = os.path.join(DATA_DIR, "scheduler.log")
+
+log = logging.getLogger("sepsis_bundle")
 GRACE_MIN = int(os.getenv("SEPSIS_NOTIFY_GRACE_MINUTES", "10"))
 # เคสที่เก่ากว่านี้ไม่แจ้ง — กันการ์ดเคสย้อนหลังหลายวันท่วมกลุ่มตอนเริ่มรันครั้งแรก/หลังระบบล่ม
 MAX_ALERT_AGE = timedelta(hours=int(os.getenv("SEPSIS_MAX_ALERT_AGE_HOURS", "6")))
@@ -80,16 +97,17 @@ def run(lookback_days=3):
             try:
                 triage = triage_info(case, tz)
             except Exception as exc:   # ข้อมูลประกอบ — ล้มเหลวก็ยังต้องส่งการ์ดเคสใหม่
-                print(f"[sepsis_bundle] triage_info ล้มเหลว an={an}: {exc}")
+                log.warning("triage_info ล้มเหลว an=%s: %s", an, exc)
                 triage = None
             try:
                 _dispatch(flex.new_case(case, tz, BUNDLE_WINDOW_MIN, tz_label=TIME_ZERO_LABEL[tz_src],
                                         triage=triage),
                           notify.format_new_case_message(case))
             except Exception as exc:
-                print(f"[sepsis_bundle] แจ้งเตือน new_case ล้มเหลว an={an}: {exc}")
+                log.error("แจ้งเตือน new_case ล้มเหลว an=%s: %s", an, exc)
             else:
                 _mark_notified(conn, an, "new_case")
+                log.info("ส่งการ์ดเคสใหม่ %s", an)
 
         due_at = tz + timedelta(minutes=BUNDLE_WINDOW_MIN + GRACE_MIN)
         if SEND_BUNDLE_RESULT and now >= due_at and not _already_notified(conn, keys, "bundle_result"):
@@ -97,12 +115,54 @@ def run(lookback_days=3):
             try:
                 _dispatch(flex.bundle_result(result), notify.format_bundle_message(result))
             except Exception as exc:
-                print(f"[sepsis_bundle] แจ้งเตือน bundle_result ล้มเหลว an={an}: {exc}")
+                log.error("แจ้งเตือน bundle_result ล้มเหลว an=%s: %s", an, exc)
             else:
                 _mark_notified(conn, an, "bundle_result")
+                log.info("ส่งการ์ดผล bundle %s", an)
 
     conn.close()
+    log.info("ตรวจแล้ว %d เคส", len(cases))
+
+
+def _try_lock():
+    """ล็อกไฟล์แบบไม่รอ — คืน file object (ต้องถือไว้จนจบ) หรือ None ถ้ารอบก่อนยังทำงานอยู่"""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    f = open(LOCK_PATH, "a+")
+    try:
+        if fcntl:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
+def _setup_logging():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=5,
+                                                   encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
+
+def main():
+    _setup_logging()
+    lock = _try_lock()
+    if lock is None:
+        log.warning("รอบก่อนยังทำงานไม่เสร็จ — ข้ามรอบนี้")
+        return
+    try:
+        run()
+    except Exception:
+        log.exception("scheduler ล้มเหลว")
+        raise
+    finally:
+        db.close()
+        lock.close()
 
 
 if __name__ == "__main__":
-    run()
+    main()
