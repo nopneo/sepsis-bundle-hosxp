@@ -48,7 +48,7 @@ def write_text(path, text, newline, bom=False):
 def stage():
     shutil.rmtree(STAGE, ignore_errors=True)
     os.makedirs(STAGE)
-    for f in APP_FILES:
+    for f in APP_FILES + ["LICENSE"]:
         shutil.copy2(os.path.join(ROOT, f), STAGE)
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
     shutil.copytree(os.path.join(ROOT, "templates"), os.path.join(STAGE, "templates"), ignore=ignore)
