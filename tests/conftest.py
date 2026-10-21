@@ -6,6 +6,10 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# กุญแจ cookie สำหรับ test — ไม่ให้ import app แล้วไปสร้าง data/secret_key ในโฟลเดอร์จริง
+os.environ.setdefault("SEPSIS_SECRET_KEY", "test-" + "k" * 40)
+
+import login_guard  # noqa: E402
 
 import db  # noqa: E402
 import moph_notify  # noqa: E402
@@ -16,6 +20,7 @@ import queries  # noqa: E402
 def isolate(monkeypatch, tmp_path):
     """ไฟล์ตั้งค่า MOPH Notify ไปอยู่ในโฟลเดอร์ชั่วคราว · ห้ามยิง HTTP ออกจริง"""
     monkeypatch.setattr(moph_notify, "SETTINGS_PATH", str(tmp_path / "data" / "moph_settings.json"))
+    monkeypatch.setattr(login_guard, "DB_PATH", str(tmp_path / "data" / "login_attempts.sqlite"))
 
     def no_network(*a, **kw):
         raise AssertionError("test ห้ามยิง HTTP ออกจริง")

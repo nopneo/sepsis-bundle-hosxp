@@ -62,13 +62,20 @@ MOPH Notify ส่งข้อความเข้า **LINE group ของห
 URL ค่าเริ่มต้น `https://morpromt2f.moph.go.th` (รับเฉพาะ `https://*.moph.go.th`) ค่าที่บันทึกเก็บที่ `data/moph_settings.json`
 (สิทธิ์ 600 ตั้งแต่สร้างไฟล์ · เขียนแบบ atomic) ไม่ต้องแก้ `.env` + restart แอป
 
-**หน้า `/settings` ต้องใส่รหัสผ่าน** `SEPSIS_SETTINGS_PASSWORD` ใน `.env` (ชื่อผู้ใช้อะไรก็ได้) — ถ้าไม่ตั้ง
-เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์เอง (`http://127.0.0.1:<port>/settings`) เพราะใครแก้หน้านี้ได้ก็เปลี่ยนปลายทางการแจ้งเตือนได้
+**หน้า `/settings` ถามรหัสหน้าตั้งค่าทุกครั้งที่เข้า** (ใช้ได้ 10 นาที) — ตั้งใน `.env` เป็น `SEPSIS_SETTINGS_PASSWORD_HASH`
+(แนะนำ สร้างแบบเดียวกับรหัสดู HN/AN) หรือ `SEPSIS_SETTINGS_PASSWORD` (รหัสตรง ๆ แบบเดิม) **ต้องเป็นคนละรหัสกับรหัสดู HN/AN**
+เพราะรหัสดู HN/AN แจกให้เจ้าหน้าที่หลายคน ส่วนใครแก้หน้านี้ได้ก็เปลี่ยน/หยุดการแจ้งเตือนได้ ·
+ไม่ตั้ง = เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์เอง (`http://127.0.0.1:<port>/settings`)
+
+**กันเดารหัส** — หน้า "กรอกรหัส" (ทั้งดู HN/AN และหน้าตั้งค่า) ผิด 5 ครั้งใน 15 นาทีจาก IP เดียว = พัก IP นั้น 15 นาที ·
+ผิดรวมทุกเครื่อง 30 ครั้ง = พักทุกคน (`SEPSIS_LOGIN_MAX_FAILS`, `SEPSIS_LOGIN_MAX_FAILS_TOTAL`, `SEPSIS_LOGIN_WINDOW_SECONDS`)
+ประวัติเก็บที่ `data/login_attempts.sqlite` · ควรตั้งรหัสยาวอย่างน้อย 8 ตัวอักษร ไม่ใช่ตัวเลข 4 หลัก
 
 **ซ่อน HN/AN** — การ์ด LINE แสดง HN/AN/VN เป็น `xxx` เสมอ (ทีมดูหอผู้ป่วย/เตียงแทน) ส่วนแดชบอร์ดซ่อนไว้จนกว่าจะกด
 "🔒 ดู HN/AN" แล้วกรอกรหัส (ปลดล็อก `SEPSIS_UNLOCK_HOURS` ชม. ต่อเบราว์เซอร์) ตั้งใน `.env` เป็น hash เท่านั้น:
-`SEPSIS_VIEW_PASSWORD_HASH` (สร้างด้วย `generate_password_hash(รหัส, method="pbkdf2:sha256")`) และ `SEPSIS_SECRET_KEY`
-— เมื่อตั้งแล้ว หน้า `/settings` จะถามรหัสเดียวกันนี้ทุกครั้งที่เข้า (แทน `SEPSIS_SETTINGS_PASSWORD`) · ไม่ตั้ง = แสดง HN/AN ตามปกติ
+`SEPSIS_VIEW_PASSWORD_HASH` (สร้างด้วย `generate_password_hash(รหัส, method="pbkdf2:sha256")`) · ไม่ตั้ง = แสดง HN/AN ตามปกติ
+กุญแจเซ็น cookie: `SEPSIS_SECRET_KEY` (≥ 32 ตัวอักษร) หรือไม่ตั้งก็ได้ — ระบบสุ่มเก็บไว้ที่ `data/secret_key` (สิทธิ์ 600) ให้ทุก worker ใช้ร่วมกัน
+ห้ามใช้ค่าที่เดาได้ ไม่งั้นปลอม cookie "ปลดล็อกแล้ว" ได้โดยไม่ต้องรู้รหัส
 
 ถ้ายังไม่ได้ตั้งค่า MOPH Notify, `scheduler.py` จะ fallback ไปใช้ LINE Messaging API (`notify.py`
 + `.env`) แทนโดยอัตโนมัติ — ตั้งอย่างใดอย่างหนึ่งก็พอ

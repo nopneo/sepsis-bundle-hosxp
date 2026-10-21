@@ -14,7 +14,7 @@ import tempfile
 import zipfile
 from datetime import date
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 TH_MONTH = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
             "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
 
@@ -26,7 +26,7 @@ STAGE = os.path.join(tempfile.mkdtemp(prefix="sepsis_pkg_"), NAME)
 DIST_COPY = os.path.join(ROOT, "dist", NAME)
 MANUAL_PDF = "คู่มือ-Sepsis-Six-Bundle.pdf"
 
-APP_FILES = ["app.py", "config.py", "db.py", "queries.py", "nurse_notes.py", "flex.py", "moph_notify.py",
+APP_FILES = ["app.py", "config.py", "db.py", "login_guard.py", "queries.py", "nurse_notes.py", "flex.py", "moph_notify.py",
              "notify.py", "scheduler.py", "setup_check.py", "requirements.txt"]
 PKG_FILES = {".env.example": ".env.example", "install.sh": "install.sh",
              "install_windows.ps1": "install_windows.ps1", "install_windows.bat": "install_windows.bat"}
