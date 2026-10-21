@@ -3,6 +3,8 @@
 ดึงเคส sepsis จาก HOSxP อัตโนมัติ (ทั้งเคสที่ admit และเคสที่จบที่ ER) คำนวณว่าทำ Sepsis Six Bundle
 ครบภายใน 1 ชม. นับจากมาถึง ER หรือไม่ และแจ้งเตือนเข้ากลุ่ม LINE ผ่าน MOPH Notify
 
+📘 **คู่มือติดตั้งและใช้งาน (PDF):** [docs/คู่มือ-Sepsis-Six-Bundle.pdf](docs/คู่มือ-Sepsis-Six-Bundle.pdf) — ต้นฉบับ `package/manual.html`
+
 ## เกณฑ์ที่ใช้
 
 - **เคส** = visit ที่มี ICD10 `A40.x`, `A41.x` หรือ `R57.2` (septic shock) ใน `ovstdiag` (ER/OPD)
