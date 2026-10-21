@@ -437,11 +437,21 @@ python install_alert.py rollback --host &lt;IP ฐานหลัก&gt; --user 
     <tr><th style="width:17%">ข้อ</th><th>ระบบหาเวลาจาก (เลือกตามลำดับ)</th><th style="width:22%">ผ่านเมื่อ</th></tr>
     <tr><td>Lactate</td><td>เวลาสั่ง lab <code>lab_head.order_date/order_time</code> ของรหัสใน <code>SEPSIS_LACTATE_LAB_ITEMS</code></td><td>สั่งภายใน 60 นาที</td></tr>
     <tr><td>Hemoculture</td><td>เวลาที่เร็วที่สุดของ: บันทึกพยาบาล, เวลาสั่ง lab, เวลาสั่งรายการค่าบริการ (<code>opitemrece_log</code> / <code>opitemrece</code>)</td><td>ภายใน 60 นาที (และเตือนถ้าหลังยาปฏิชีวนะ)</td></tr>
-    <tr><td>ยาปฏิชีวนะ</td><td>1) เวลาที่พยาบาลบันทึกใน HPI 2) <code>er_regist.antibiotics_datetime</code> 3) ครั้งแรกที่ยาปรากฏใน <code>opitemrece_log</code> ของ visit ER 4) คำสั่งบนหอ (<code>item_type='P'</code>)</td><td>ภายใน 60 นาที</td></tr>
+    <tr><td>ยาปฏิชีวนะ</td><td>1) เวลาที่พยาบาลบันทึกใน HPI 2) <code>er_regist.antibiotics_datetime</code> 3) ครั้งแรกที่ยาปรากฏใน <code>opitemrece_log</code> ของ visit ER 4) คำสั่งบนหอ (<code>item_type='P'</code>) · บันทึก KIPS หอผู้ป่วยใช้ร่วมด้วย (ด้านล่าง)</td><td>ภายใน 60 นาที</td></tr>
     <tr><td>IV fluid</td><td>เหมือนยาปฏิชีวนะ ใช้รหัสใน <code>SEPSIS_IV_FLUID_ICODES</code> · บันทึกพยาบาลต้องมีคำว่า iv/load/drip</td><td>ภายใน 60 นาที</td></tr>
-    <tr><td>ออกซิเจน</td><td>บันทึกพยาบาล เช่น On O2 cannula, mask c bag, HFNC, ETT · หรือ SpO₂ แรก</td><td>ให้ O₂ หรือ SpO₂ แรก ≥ 94%</td></tr>
-    <tr><td>Urine output</td><td>บันทึกพยาบาล เช่น retained foley, สวนปัสสาวะคาสาย, I/O</td><td>มีบันทึก (ไม่มีเวลา)</td></tr>
+    <tr><td>ออกซิเจน</td><td>บันทึกพยาบาล (ER หรือ KIPS หอผู้ป่วย) เช่น On O2 cannula, mask c bag, HFNC, ETT · หรือ SpO₂ แรก</td><td>ให้ O₂ หรือ SpO₂ แรก ≥ 94%</td></tr>
+    <tr><td>Urine output</td><td>บันทึกพยาบาล (ER หรือ KIPS หอผู้ป่วย) เช่น retained foley, สวนปัสสาวะคาสาย, I/O</td><td>มีบันทึก (ไม่มีเวลา)</td></tr>
   </table>
+  <h3>บันทึกพยาบาลหอผู้ป่วยจาก KIPS (IPD paperless)</h3>
+  <p>ถ้า รพ. ใช้ KIPS (มีตาราง <code>kips_ipd_nurse_focus_detail</code>) ระบบอ่านบันทึก focus charting ของ AN นั้นเพิ่ม
+     สำหรับ<b>ยาปฏิชีวนะ, IV fluid, O2 และ Urine output</b> — ช่วยเคสที่แพทย์ลงรหัส sepsis หลัง admit และการดูแลชั่วโมงแรกเกิดบนหอ</p>
+  <ul>
+    <li><b>มีเวลาในข้อความ</b> เช่น <code>- Cef-3 2 gm iv drip at 12.20 น.</code> → นับเป็นเวลาให้จริง (แหล่ง "พยาบาลบันทึกเวลาให้ (KIPS หอผู้ป่วย)")
+        ถ้ามีทั้ง ER และ KIPS ใช้เวลาที่เร็วกว่า</li>
+    <li><b>ไม่มีเวลา</b> เช่น <code>- ให้ยา Cef-3 2 gm v OD</code> → ใช้<b>เวลาที่บันทึก</b>ใน KIPS เป็นเวลาที่ "ให้แล้วไม่ช้ากว่านี้"
+        เฉพาะเมื่อเร็วกว่าเวลาสั่งยา (แหล่ง "พยาบาลบันทึกใน KIPS (ใช้เวลาบันทึก)")</li>
+  </ul>
+  <p>การเตือนเคสใหม่ไม่ขึ้นกับ KIPS — ระบบจับเคสจากรหัส ICD10 ที่แพทย์ลง ไม่ว่าพยาบาลจะบันทึกที่ไหน · ปิดการอ่าน KIPS ได้ด้วย <code>SEPSIS_KIPS_NOTES=0</code></p>
   <p>"ครบ 4 ข้อ" นับเฉพาะ Lactate, Hemoculture, ยาปฏิชีวนะ และ IV fluid · ออกซิเจนและ Urine output แสดงผลประกอบ ถ้าไม่พบบันทึกจะขึ้น "ยืนยันเอง"</p>
   <div class="box warn"><b>เวลาสั่ง ≠ เวลาให้จริง</b> — HOSxP ไม่มีตารางบันทึกการให้ยาที่เชื่อถือได้ (<code>ipd_mar</code> เป็นตารางคำสั่ง)
      ระบบจึงใช้เวลาที่พยาบาลเขียนในบันทึกก่อน ถ้าไม่มีจึงใช้เวลาสั่ง ซึ่งอาจเร็วกว่าเวลาให้จริง หน้าแดชบอร์ดบอกแหล่งของเวลาทุกข้อ</div>
@@ -491,6 +501,7 @@ python install_alert.py rollback --host &lt;IP ฐานหลัก&gt; --user 
     <tr><td><code>SEPSIS_OVSTOST_REFER</code> / <code>_DEATH</code> / <code>_REFUSE</code> / <code>_ESCAPE</code> / <code>_HOME</code></td><td>54 / 52,53 / 96 / 97 / 99</td><td>รหัส ovstost ของแต่ละสถานะจำหน่าย</td></tr>
     <tr><td><code>SEPSIS_ER_DCH_REFER</code> / <code>_DEATH</code> / <code>_REFUSE</code> / <code>_ESCAPE</code> / <code>_HOME</code></td><td>2 / 4,6 / 7 / 8 / 1</td><td>รหัส er_dch_type ของแต่ละสถานะจำหน่าย</td></tr>
     <tr><td><code>LINE_CHANNEL_ACCESS_TOKEN</code> / <code>LINE_TO</code></td><td>–</td><td>ทางเลือกแทน MOPH Notify</td></tr>
+    <tr><td><code>SEPSIS_KIPS_NOTES</code></td><td>1</td><td>1 = อ่านบันทึกพยาบาลหอผู้ป่วยจาก KIPS เพิ่ม (ถ้ามีตาราง) · 0 = ไม่อ่าน</td></tr>
     <tr><td><code>SEPSIS_VIEW_PASSWORD_HASH</code></td><td>(ว่าง)</td><td>hash ของรหัสดู HN/AN และเข้าหน้าตั้งค่า (หัวข้อ 9) · ว่าง = แสดง HN/AN ตามปกติ</td></tr>
     <tr><td><code>SEPSIS_SECRET_KEY</code></td><td>(สุ่มทุกครั้งที่เปิด)</td><td>กุญแจ session ของการปลดล็อก ควรตั้งเป็นค่าสุ่มคงที่</td></tr>
     <tr><td><code>SEPSIS_UNLOCK_HOURS</code></td><td>8</td><td>ปลดดู HN/AN แล้วเห็นได้กี่ชั่วโมงต่อเบราว์เซอร์</td></tr>
