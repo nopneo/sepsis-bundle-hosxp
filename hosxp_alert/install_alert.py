@@ -62,7 +62,29 @@ def mews_sql(avpu, sep=" + "):
     return sep.join(MEWS_PARTS + ([MEWS_AVPU] if avpu else []))
 
 
-def build_script(er_deps, avpu=False, mews_alert=5):
+# SpO2: ช่อง o2sat ก่อน ถ้าว่างดึงจากข้อความที่พยาบาลพิมพ์ เช่น "O2 sat : 96 %", "O2 sat RA =97" · นอกช่วง 50-100 = 0
+SPO2_TEXT_COLS = ("hpi", "pe", "note")
+SPO2_REGEX = "(o2 ?sat|spo ?2|sat ?o2)[^0-9]{0,12}[0-9]{2,3}"
+
+
+def spo2_sql(cols=None):
+    """นิพจน์ SpO2 ต่อ 1 แถว opdscreen — cols = คอลัมน์ที่มีจริง (HOSxP รุ่นเก่าอาจไม่มีบางช่อง = script พังเงียบ)"""
+    cols = set(cols) if cols is not None else {"o2sat", *SPO2_TEXT_COLS}
+    parts = ["nullif(round(o2sat), 0)"] if "o2sat" in cols else []
+    text = [c for c in SPO2_TEXT_COLS if c in cols]
+    if text:
+        parts.append(f'cast(regexp_substr(regexp_substr(lower(concat_ws(" ", {", ".join(text)})), '
+                     f'"{SPO2_REGEX}"), "[0-9]{{2,3}}$") as unsigned)')
+    if not parts:
+        return "0"
+    v = f"coalesce({', '.join(parts)}, 0)"
+    return f"if({v} between 50 and 100, {v}, 0)"
+
+
+SPO2_SQL = spo2_sql()
+
+
+def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=None):
     codes = [c.strip() for c in er_deps.split(",") if c.strip()]
     if not codes or not all(re.fullmatch(r"[0-9A-Za-z]{1,6}", c) for c in codes):
         sys.exit("--er-deps ต้องเป็นรหัสแผนก คั่นด้วยจุลภาค เช่น 011 หรือ 011,012")
@@ -75,6 +97,10 @@ def build_script(er_deps, avpu=False, mews_alert=5):
     text = text.replace("{{MEWS_SQL}}", mews_sql(avpu, sep=" + '+\n'"))
     # เทียบแบบ fptname > 3 ที่ทดสอบผ่านใน HOSxP แล้ว (MEWS >= N เท่ากับ > N-1) · 0 = ไม่มีวันถึง
     text = text.replace("{{MEWS_GT}}", str(mews_alert - 1 if mews_alert else 98))
+    if not 0 <= spo2_alert <= 100:
+        sys.exit("--spo2-alert ต้องเป็น 0-100 (0 = ไม่เตือน SpO2 แยก)")
+    text = text.replace("{{SPO2_SQL}}", spo2_sql(spo2_cols))
+    text = text.replace("{{SPO2_LT}}", str(spo2_alert))
     text.encode("tis-620")          # ฐาน HOSxP ส่วนใหญ่เก็บ tis620 — อักษรนอกชุดนี้บันทึกไม่ได้
     return text.replace("\r\n", "\n").replace("\n", "\r\n")
 
@@ -172,9 +198,13 @@ def cmd_check(args):
     c.close()
 
 
+def opdscreen_cols(cur):
+    return {r[0].lower() for r in q(cur, "select column_name from information_schema.columns "
+                                         "where table_schema = database() and table_name = 'opdscreen'")}
+
+
 def has_avpu(cur):
-    return bool(q(cur, "select 1 from information_schema.columns where table_schema = database() "
-                       "and table_name = 'opdscreen' and column_name = 'consciousness_level_type_id'"))
+    return "consciousness_level_type_id" in opdscreen_cols(cur)
 
 
 def backup(row, args):
@@ -199,8 +229,12 @@ def confirm(args, action):
 def cmd_install(args):
     c = connect(args)
     cur = c.cursor()
-    avpu = has_avpu(cur)
-    new = build_script(args.er_deps, avpu=avpu, mews_alert=args.mews_alert)
+    cols = opdscreen_cols(cur)
+    avpu = "consciousness_level_type_id" in cols
+    new = build_script(args.er_deps, avpu=avpu, mews_alert=args.mews_alert,
+                       spo2_alert=args.spo2_alert, spo2_cols=cols)
+    print(f"SpO2: อ่านจาก {', '.join(c for c in ('o2sat', *SPO2_TEXT_COLS) if c in cols) or '(ไม่มีช่อง)'} · "
+          + (f"เตือนแยกเมื่อ SpO2 < {args.spo2_alert}%" if args.spo2_alert else "ไม่เตือนแยก"))
     print(f"MEWS: {'รวม AVPU' if avpu else 'ไม่มีช่อง AVPU คิด 4 ค่า'} · "
           + (f"เตือนแยกเมื่อ MEWS >= {args.mews_alert}" if args.mews_alert
              else "ไม่เตือนแยก (แสดงในหน้าต่าง Sepsis เท่านั้น)"))
@@ -267,6 +301,7 @@ def main():
     ap.add_argument("--user", required=True)
     ap.add_argument("--er-deps", help="รหัสแผนก ER (opdscreen.screen_dep) เช่น 011 หรือ 011,012")
     ap.add_argument("--mews-alert", type=int, default=5, help="เตือนแยกเมื่อ MEWS >= ค่านี้ (0 = ไม่เตือน)")
+    ap.add_argument("--spo2-alert", type=int, default=92, help="เตือนแยกเมื่อ SpO2 ต่ำกว่าค่านี้ (0 = ไม่เตือน)")
     ap.add_argument("--backup", help="ไฟล์สำรองสำหรับ rollback")
     ap.add_argument("--replace", action="store_true", help="แทนที่ script อื่นของ รพ. ทั้งหมด")
     ap.add_argument("--force", action="store_true", help="rollback แม้ script ปัจจุบันไม่ใช่ของระบบนี้")

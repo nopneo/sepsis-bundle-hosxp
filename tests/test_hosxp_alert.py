@@ -83,3 +83,12 @@ def test_pascal_blocks_balanced():
     begins = len(re.findall(r"\bbegin\b", code, re.I))
     ends = len(re.findall(r"\bend\b", code, re.I))
     assert begins == ends
+
+
+def test_build_script_spo2():
+    text = install_alert.build_script("011", avpu=False, mews_alert=5, spo2_alert=92)
+    assert "o2sat" in text and "regexp_substr" in text
+    assert "if fspo2 < 92 then" in text
+    assert "'" not in install_alert.SPO2_SQL
+    off = install_alert.build_script("011", avpu=False, mews_alert=5, spo2_alert=0)
+    assert "if fspo2 < 0 then" in off                    # 0 = ไม่เตือน SpO2 แยก (ไม่มีค่าใดต่ำกว่า 0)

@@ -1,9 +1,12 @@
 // SYS_VN_SCRIPT - เตือนสงสัย Sepsis (Sepsis Six Bundle) ต้นแบบ - สร้างจริงด้วย install_alert.py
 // {{ER_DEPS_SQL}} / {{ER_DEPS_TEXT}} = รหัสแผนก ER ของโรงพยาบาล
 // MEWS_SQL = นิพจน์ MEWS, MEWS_GT = เตือน MEWS แยกเมื่อคะแนนมากกว่าค่านี้ (ตัวติดตั้งแทนค่าให้)
+// SPO2_SQL = นิพจน์ SpO2, SPO2_LT = เตือน SpO2 แยกเมื่อต่ำกว่าค่านี้
 var
 fmews : string;
 fsepsis : string;
+fspo2 : string;
+fshown : string;
 fvn : string;
 fhn : string;
 fptname : string;
@@ -43,6 +46,7 @@ fptname := '';
 ffever := '0';
 fmews := '0';
 fsepsis := '0';
+fspo2 := '0';
 crlf := chr(13) + chr(10);
 //showmessage(fptname);
 if fage > 14 then
@@ -74,6 +78,13 @@ fvital := fvital + '   P ' + fpulse + '   RR ' + frr;
 fmews := getsqldata('select {{MEWS_SQL}} as mews '+
 'from opdscreen where vn="'+fvn+'" ');
 fvital := fvital + '   MEWS ' + fmews;
+// --- เพิ่ม: SpO2 จากช่อง o2sat หรือข้อความที่พยาบาลพิมพ์ เช่น "O2 sat : 96 %" (0 = ไม่พบ) ---
+fspo2 := getsqldata('select {{SPO2_SQL}} as spo2 '+
+'from opdscreen where vn="'+fvn+'" ');
+if fspo2 > 0 then
+begin
+  fvital := fvital + '   SpO2 ' + fspo2 + '%';
+end;
 // เวลาเป้าหมายฝั่ง ER = เวลาบันทึก + 60 นาที (date_format คืนข้อความ HH:MM)
 fdue := getsqldata('select date_format(now() + interval 60 minute, "%H:%i")');
 // --- เพิ่ม: บันทึกจาก ER หรือไม่ = แผนกที่ซักประวัติ (opdscreen.screen_dep) เป็นรหัส ER ({{ER_DEPS_TEXT}}) หรือมีแถว er_regist แล้ว ---
@@ -301,17 +312,32 @@ begin
   end;
 end;
 
-// --- เพิ่ม: ไม่เข้าเกณฑ์สงสัย Sepsis แต่ MEWS สูง = เสี่ยงทรุดลง (แสดงแทนข้อความ SOS เดิม) ---
+// --- เพิ่ม: ไม่เข้าเกณฑ์สงสัย Sepsis แต่ MEWS สูง / SpO2 ต่ำ = เสี่ยงทรุดลง (แสดงแทนข้อความ SOS เดิม) ---
 if fsepsis = '0' then
 begin
+  fshown := '0';
   if fmews > {{MEWS_GT}} then
   begin
     showmessage ('MEWS = ' + fmews + ' : เสี่ยงสูง (High risk)' + crlf +
                  'แจ้งแพทย์ประเมิน / พิจารณาแจ้งทีมช่วยเหลือ' + crlf +
                  'วัดสัญญาณชีพถี่ขึ้น' + crlf + crlf +
                  'SOS Score = ' + fptname + '   ' + fvital);
-  end
-  else
+    fshown := '1';
+  end;
+  if fshown = '0' then
+  begin
+    if fspo2 > 0 then
+    begin
+      if fspo2 < {{SPO2_LT}} then
+      begin
+        showmessage ('SpO2 = ' + fspo2 + '% : ต่ำ' + crlf +
+                     'ให้ออกซิเจนตามแนวทาง / แจ้งแพทย์ประเมิน' + crlf + crlf +
+                     'MEWS = ' + fmews + '   SOS Score = ' + fptname + crlf + fvital);
+        fshown := '1';
+      end;
+    end;
+  end;
+  if fshown = '0' then
   begin
     if fptname > 3 then
     begin

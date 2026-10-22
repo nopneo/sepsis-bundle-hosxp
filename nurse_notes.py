@@ -35,7 +35,8 @@ TOTAL_VOL = re.compile(r"(?:total\s*(?:iv\s*)?load|ให้ครบ)\D{0,10}?"
 AFTER = re.compile(r"^\s*หลัง")   # "หลัง Load ครบ 500cc" = รายงานว่าให้ครบแล้ว ไม่ใช่สั่งเพิ่ม
 CARRIER = re.compile(r"\+\s*\S*\s*(nss|nacl|5\s*dw|d5w)|\b(50|100)\s*(ml|cc)\b(?!\s*/)", re.I)
 BP = re.compile(r"\bBP\s*[:=]?\s*(\d{2,3})\s*/\s*(\d{2,3})", re.I)
-SPO2 = re.compile(r"(?:o2\s*sat|spo\s*2)\s*:?\s*(\d{2,3})\s*%", re.I)
+# "O2 sat 96", "O2 sat : 96 %", "O2 sat RA =97 %", "o2satRA98%", "SpO2 95%" (ต.ค. 2026: แบบไม่มี % พบมากที่สุด)
+SPO2 = re.compile(r"(?:o2\s*sat|spo\s*2|sat\s*o2)\s*(?:ra|room\s*air)?\s*[:=]?\s*(?<![\d.])(\d{2,3})(?![\d.])", re.I)
 
 TIME = re.compile(
     r"(?P<pre>\b(?:at|stat)\s*\.{0,3}\s*|เวลา\s*\.{0,3}\s*)?"
@@ -160,7 +161,7 @@ def parse(text, tz, fluid_hours=3, written_at=None):
     if sbps:
         found["min_sbp"] = min(sbps)
 
-    spo2 = SPO2.search(text)
-    if spo2:
-        found["first_spo2"] = int(spo2.group(1))
+    spo2 = next((int(m.group(1)) for m in SPO2.finditer(text) if 50 <= int(m.group(1)) <= 100), None)
+    if spo2 is not None:
+        found["first_spo2"] = spo2
     return found
