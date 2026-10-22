@@ -1,6 +1,9 @@
 // SYS_VN_SCRIPT - เตือนสงสัย Sepsis (Sepsis Six Bundle) ต้นแบบ - สร้างจริงด้วย install_alert.py
 // {{ER_DEPS_SQL}} / {{ER_DEPS_TEXT}} = รหัสแผนก ER ของโรงพยาบาล
+// MEWS_SQL = นิพจน์ MEWS, MEWS_GT = เตือน MEWS แยกเมื่อคะแนนมากกว่าค่านี้ (ตัวติดตั้งแทนค่าให้)
 var
+fmews : string;
+fsepsis : string;
 fvn : string;
 fhn : string;
 fptname : string;
@@ -38,6 +41,8 @@ fhn := getsqldata('select hn from opdscreen where vn="'+fvn+'" ');
 fage := getsqldata('select age_y from vn_stat where vn="'+fvn+'" ');
 fptname := '';
 ffever := '0';
+fmews := '0';
+fsepsis := '0';
 crlf := chr(13) + chr(10);
 //showmessage(fptname);
 if fage > 14 then
@@ -65,6 +70,10 @@ frr := getsqldata('select round(rr) from opdscreen where vn="'+fvn+'" ');
 fvital := 'BP ' + fbps;
 fvital := fvital + '/' + fbpd;
 fvital := fvital + '   P ' + fpulse + '   RR ' + frr;
+// --- เพิ่ม: MEWS (Modified Early Warning Score) คืนเป็นตัวเลขเดียว ช่องว่าง/ค่าผิดได้ 0 ---
+fmews := getsqldata('select {{MEWS_SQL}} as mews '+
+'from opdscreen where vn="'+fvn+'" ');
+fvital := fvital + '   MEWS ' + fmews;
 // เวลาเป้าหมายฝั่ง ER = เวลาบันทึก + 60 นาที (date_format คืนข้อความ HH:MM)
 fdue := getsqldata('select date_format(now() + interval 60 minute, "%H:%i")');
 // --- เพิ่ม: บันทึกจาก ER หรือไม่ = แผนกที่ซักประวัติ (opdscreen.screen_dep) เป็นรหัส ER ({{ER_DEPS_TEXT}}) หรือมีแถว er_regist แล้ว ---
@@ -78,6 +87,7 @@ begin
   if ffever = '1' then
   begin
     // --- เพิ่ม: SOS > 3 ร่วมกับไข้/ตัวเย็น = สงสัย Sepsis (ข้อความใช้อักษร TIS-620 เท่านั้น) ---
+    fsepsis := '1';
     if fwhere = 'SCREEN' then
     begin
       ftitle := '  เตือนสงสัย SEPSIS : ส่ง ER ทันที';
@@ -288,10 +298,25 @@ begin
       frm.ShowModal;
       frm.Free;
     end;
+  end;
+end;
+
+// --- เพิ่ม: ไม่เข้าเกณฑ์สงสัย Sepsis แต่ MEWS สูง = เสี่ยงทรุดลง (แสดงแทนข้อความ SOS เดิม) ---
+if fsepsis = '0' then
+begin
+  if fmews > {{MEWS_GT}} then
+  begin
+    showmessage ('MEWS = ' + fmews + ' : เสี่ยงสูง (High risk)' + crlf +
+                 'แจ้งแพทย์ประเมิน / พิจารณาแจ้งทีมช่วยเหลือ' + crlf +
+                 'วัดสัญญาณชีพถี่ขึ้น' + crlf + crlf +
+                 'SOS Score = ' + fptname + '   ' + fvital);
   end
   else
   begin
-    showmessage ('ผู้ป่วยมี SOS Score ='+fptname+' ');
+    if fptname > 3 then
+    begin
+      showmessage ('ผู้ป่วยมี SOS Score ='+fptname+' ');
+    end;
   end;
 end;
 

@@ -391,7 +391,10 @@ SEPSIS_UNLOCK_HOURS=8</pre>
   <div class="cap">ซ้าย: จุดคัดกรอง (ส่ง ER ทันที) · ขวา: ER (เริ่ม Bundle + เวลาเป้าหมาย) — ภาพจำลอง</div>
   <ul>
     <li><b>แยกจุด:</b> ถือว่าเป็น ER เมื่อแผนกที่ซักประวัติ (<code>opdscreen.screen_dep</code>) เป็นรหัส ER ของ รพ. หรือมีแถว <code>er_regist</code> แล้ว</li>
-    <li>SOS &gt; 3 ที่ไม่มีไข้ยังขึ้นข้อความ SOS แบบเดิม · เป็น script ในตาราง <code>sys_app_script</code> ชื่อ <code>SYS_VN_SCRIPT</code> ไม่ต้องติดตั้งที่เครื่องพยาบาล</li>
+    <li><b>MEWS</b> (Modified Early Warning Score: RR, ชีพจร, SBP, อุณหภูมิ และ AVPU ถ้ากรอก) แสดงในหน้าต่างเตือน
+        และถ้าไม่เข้าเกณฑ์ Sepsis แต่ <b>MEWS ≥ 5</b> จะขึ้นข้อความ "MEWS = X : เสี่ยงสูง" ให้แจ้งแพทย์ประเมิน
+        (ปรับจุดตัดด้วย <code>--mews-alert</code> ตอนติดตั้ง)</li>
+    <li>SOS &gt; 3 ที่ไม่มีไข้และ MEWS ต่ำกว่าจุดตัด ยังขึ้นข้อความ SOS แบบเดิม · เป็น script ในตาราง <code>sys_app_script</code> ชื่อ <code>SYS_VN_SCRIPT</code> ไม่ต้องติดตั้งที่เครื่องพยาบาล</li>
   </ul>
   <h3>ติดตั้ง (ผู้ดูแล HOSxP)</h3>
 <pre><span class="c"># 1) ตรวจ: script เดิม, รหัสแผนก ER ที่แนะนำ, ประมาณจำนวนการเตือน (อ่านอย่างเดียว)</span>

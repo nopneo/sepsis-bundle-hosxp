@@ -1,7 +1,7 @@
 """ตัวติดตั้งหน้าต่างเตือน "สงสัย Sepsis" ในหน้าซักประวัติ HOSxP (SYS_VN_SCRIPT)
 
     python install_alert.py check    --host <ip> [--db hos] --user <user>
-    python install_alert.py install  --host <ip> [--db hos] --user <user> --er-deps 011[,012]
+    python install_alert.py install  --host <ip> [--db hos] --user <user> --er-deps 011[,012] [--mews-alert 5]
     python install_alert.py rollback --host <ip> [--db hos] --user <user> --backup backups/<ไฟล์>.pas
 
 ถามรหัสผ่านแบบซ่อน ไม่เก็บรหัสในไฟล์ · ทดสอบกับฐานทดสอบก่อนฐานจริงเสมอ
@@ -9,6 +9,8 @@
 check    : script ปัจจุบัน, รายการแผนกที่รัน VN script, รหัสแผนก ER ที่แนะนำ (จาก opdscreen.screen_dep
            ของ visit ER), ประมาณจำนวนการเตือนต่อวันจากข้อมูล 90 วัน — อ่านอย่างเดียว
 install  : สำรอง script เดิมลง backups/ อัตโนมัติ แล้วติดตั้ง (เขียนเฉพาะเมื่อ script ไม่เปลี่ยนระหว่างนั้น)
+           MEWS แสดงในหน้าต่างเตือน และเตือนแยกเมื่อ MEWS >= --mews-alert (ค่าเริ่มต้น 5, 0 = ไม่เตือนแยก)
+           รวม AVPU ในคะแนนเองถ้ามีคอลัมน์ opdscreen.consciousness_level_type_id
            ถ้า script เดิมของ รพ. ไม่ใช่ script SOS แบบที่ระบบนี้รู้จัก จะไม่ทับให้ — ต้องรวมเอง หรือใส่ --replace
 rollback : คืน script จากไฟล์สำรอง (เขียนเฉพาะเมื่อ script ปัจจุบันเป็นของระบบนี้)
 
@@ -41,13 +43,38 @@ SOS_MARKER = "sos_score"               # script SOS เดิมแบบ รพ
 SCRIPT_NAME = "SYS_VN_SCRIPT"
 
 
-def build_script(er_deps):
+# Modified Early Warning Score (Subbe 2001) — ช่องว่าง/ค่าผิด (เช่น T 0, BP 0) ได้ 0 ไม่ใช่คะแนนสูงสุด
+MEWS_PARTS = [
+    "(case when rr is null or rr <= 2 then 0 when rr < 9 then 2 when rr <= 14 then 0 "
+    "when rr <= 20 then 1 when rr <= 29 then 2 else 3 end)",
+    "(case when pulse is null or pulse <= 20 then 0 when pulse <= 40 then 2 when pulse <= 50 then 1 "
+    "when pulse <= 100 then 0 when pulse <= 110 then 1 when pulse < 130 then 2 else 3 end)",
+    "(case when bps is null or bps <= 50 then 0 when bps <= 70 then 3 when bps <= 80 then 2 "
+    "when bps <= 100 then 1 when bps < 200 then 0 else 2 end)",
+    "(case when temperature is null or temperature <= 20 then 0 when temperature <= 35 then 2 "
+    "when temperature < 38.5 then 0 else 2 end)",
+]
+# AVPU จากหน้าซักประวัติ: 1 A=0, 2 V=1, 3 P=2, 4 U=3 · ว่าง = 0
+MEWS_AVPU = "(case consciousness_level_type_id when 2 then 1 when 3 then 2 when 4 then 3 else 0 end)"
+
+
+def mews_sql(avpu, sep=" + "):
+    return sep.join(MEWS_PARTS + ([MEWS_AVPU] if avpu else []))
+
+
+def build_script(er_deps, avpu=False, mews_alert=5):
     codes = [c.strip() for c in er_deps.split(",") if c.strip()]
     if not codes or not all(re.fullmatch(r"[0-9A-Za-z]{1,6}", c) for c in codes):
         sys.exit("--er-deps ต้องเป็นรหัสแผนก คั่นด้วยจุลภาค เช่น 011 หรือ 011,012")
+    if not 0 <= mews_alert <= 14:
+        sys.exit("--mews-alert ต้องเป็น 0-14 (0 = ไม่เตือน MEWS แยก)")
     text = open(TEMPLATE, encoding="utf-8").read()
     text = text.replace("{{ER_DEPS_SQL}}", ",".join(f'"{c}"' for c in codes))
     text = text.replace("{{ER_DEPS_TEXT}}", "/".join(codes))
+    # นิพจน์อยู่ในสตริง Pascal '...' — ต่อสตริงบรรทัดละส่วน
+    text = text.replace("{{MEWS_SQL}}", mews_sql(avpu, sep=" + '+\n'"))
+    # เทียบแบบ fptname > 3 ที่ทดสอบผ่านใน HOSxP แล้ว (MEWS >= N เท่ากับ > N-1) · 0 = ไม่มีวันถึง
+    text = text.replace("{{MEWS_GT}}", str(mews_alert - 1 if mews_alert else 98))
     text.encode("tis-620")          # ฐาน HOSxP ส่วนใหญ่เก็บ tis620 — อักษรนอกชุดนี้บันทึกไม่ได้
     return text.replace("\r\n", "\n").replace("\n", "\r\n")
 
@@ -131,7 +158,23 @@ def cmd_check(args):
             and s.temperature > 0 and s.bps > 0 and s.pulse > 0 and s.rr > 0) x
         where sos > 3 and (t >= 38 or (t > 20 and t < 36))""")[0][0]
     print(f"\nประมาณการ: จะเตือนสงสัย Sepsis {est} ครั้งใน 90 วัน (~{est / 90:.1f} ครั้ง/วัน)")
+
+    avpu = has_avpu(cur)
+    print("\nช่อง AVPU (opdscreen.consciousness_level_type_id):", "มี" if avpu else "ไม่มี — MEWS คิด 4 ค่า")
+    row = q(cur, f"""
+        select sum(m >= 3), sum(m >= 5), sum(m >= 7), count(*), sum(a) from (
+          select {mews_sql(avpu)} m, {"consciousness_level_type_id is not null" if avpu else "0"} a
+          from (select s.* from opdscreen s join vn_stat v on v.vn = s.vn
+                where s.vstdate >= curdate() - interval 90 day and v.age_y >= 15) s) x""")[0]
+    ge3, ge5, ge7, n, filled = (int(x or 0) for x in row)
+    print(f"MEWS ผู้ใหญ่ {n} visit (กรอก AVPU {filled}) — >= 3: {ge3} · >= 5: {ge5} (~{ge5 / 90:.1f} ครั้ง/วัน)"
+          f" · >= 7: {ge7}")
     c.close()
+
+
+def has_avpu(cur):
+    return bool(q(cur, "select 1 from information_schema.columns where table_schema = database() "
+                       "and table_name = 'opdscreen' and column_name = 'consciousness_level_type_id'"))
 
 
 def backup(row, args):
@@ -154,9 +197,13 @@ def confirm(args, action):
 
 
 def cmd_install(args):
-    new = build_script(args.er_deps)
     c = connect(args)
     cur = c.cursor()
+    avpu = has_avpu(cur)
+    new = build_script(args.er_deps, avpu=avpu, mews_alert=args.mews_alert)
+    print(f"MEWS: {'รวม AVPU' if avpu else 'ไม่มีช่อง AVPU คิด 4 ค่า'} · "
+          + (f"เตือนแยกเมื่อ MEWS >= {args.mews_alert}" if args.mews_alert
+             else "ไม่เตือนแยก (แสดงในหน้าต่าง Sepsis เท่านั้น)"))
     row = current(cur)
     k = kind(row[1] if row else None)
     print(f"script ปัจจุบัน: {k}")
@@ -219,6 +266,7 @@ def main():
     ap.add_argument("--db", default="hos")
     ap.add_argument("--user", required=True)
     ap.add_argument("--er-deps", help="รหัสแผนก ER (opdscreen.screen_dep) เช่น 011 หรือ 011,012")
+    ap.add_argument("--mews-alert", type=int, default=5, help="เตือนแยกเมื่อ MEWS >= ค่านี้ (0 = ไม่เตือน)")
     ap.add_argument("--backup", help="ไฟล์สำรองสำหรับ rollback")
     ap.add_argument("--replace", action="store_true", help="แทนที่ script อื่นของ รพ. ทั้งหมด")
     ap.add_argument("--force", action="store_true", help="rollback แม้ script ปัจจุบันไม่ใช่ของระบบนี้")
