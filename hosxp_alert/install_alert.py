@@ -64,7 +64,8 @@ def mews_sql(avpu, sep=" + "):
 
 # SpO2: ช่อง o2sat ก่อน ถ้าว่างดึงจากข้อความที่พยาบาลพิมพ์ เช่น "O2 sat : 96 %", "O2 sat RA =97" · นอกช่วง 50-100 = 0
 SPO2_TEXT_COLS = ("hpi", "pe", "note")
-SPO2_REGEX = "(o2 ?sat|spo ?2|sat ?o2)[^0-9]{0,12}[0-9]{2,3}"
+# ห้ามใช้ ? และ { } — ตัวเชื่อมฐานของ HOSxP ตีความ ? เป็นพารามิเตอร์ / { } เป็นคอมเมนต์ Pascal (script หยุดเงียบ)
+SPO2_REGEX = "(o2 *sat|spo *2|sat *o2)( *ra| *room *air)* *[:=]* *[0-9][0-9][0-9]*"
 
 
 def spo2_sql(cols=None):
@@ -74,7 +75,7 @@ def spo2_sql(cols=None):
     text = [c for c in SPO2_TEXT_COLS if c in cols]
     if text:
         parts.append(f'cast(regexp_substr(regexp_substr(lower(concat_ws(" ", {", ".join(text)})), '
-                     f'"{SPO2_REGEX}"), "[0-9]{{2,3}}$") as unsigned)')
+                     f'"{SPO2_REGEX}"), "[0-9]+$") as unsigned)')
     if not parts:
         return "0"
     v = f"coalesce({', '.join(parts)}, 0)"
@@ -92,7 +93,7 @@ _GCS_VALID = ("d.vn = o.vn and d.gcs_e between 1 and 4 and d.gcs_v between 1 and
 def _gcs_text(text_cols):
     """GCS ที่พยาบาลพิมพ์ใน HPI/PE เช่น "E4V5M6", "E3VTM5" (ต.ค. 2026: พบ ~14% ของ visit มากกว่าช่อง GCS ราว 5 เท่า)"""
     cols = ", ".join(f"o.{c}" for c in SPO2_TEXT_COLS if c in text_cols)
-    return f'regexp_substr(lower(concat_ws(" ", {cols})), "e ?[1-4] ?v ?[1-5t] ?m ?[1-6]")' if cols else ""
+    return f'regexp_substr(lower(concat_ws(" ", {cols})), "e *[1-4] *v *[1-5t] *m *[1-6]")' if cols else ""
 
 
 def _mentation(avpu, er_gcs, altered, text_cols=()):
@@ -104,7 +105,7 @@ def _mentation(avpu, er_gcs, altered, text_cols=()):
         conds.append(f"exists(select 1 from er_nursing_detail d where {_GCS_VALID}{extra})")
     g = _gcs_text(text_cols)
     if g:   # ค่าแรกที่พิมพ์ ไม่ใช่ E4V5M6 = GCS < 15 (รวม VT ใส่ท่อช่วยหายใจ)
-        conds.append(f'({g} <> "" and {g} not regexp "e ?4 ?v ?5 ?m ?6")' if altered else f'{g} <> ""')
+        conds.append(f'({g} <> "" and {g} not regexp "e *4 *v *5 *m *6")' if altered else f'{g} <> ""')
     return " or ".join(conds)
 
 

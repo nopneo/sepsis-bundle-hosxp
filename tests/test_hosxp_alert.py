@@ -138,6 +138,15 @@ def test_build_script_shows_qsofa_in_sepsis_window():
 def test_build_script_reads_gcs_from_text():
     """GCS ส่วนใหญ่พิมพ์ใน HPI/PE เช่น E4V5M6 — script ต้องอ่านจากข้อความด้วย และไม่อ้างคอลัมน์ที่ไม่มี"""
     text = install_alert.build_script("011", er_gcs=False, spo2_cols={"hpi", "pe"})
-    assert "e ?[1-4] ?v ?[1-5t] ?m ?[1-6]" in text and "o.hpi, o.pe" in text and "o.note" not in text
+    assert "e *[1-4] *v *[1-5t] *m *[1-6]" in text and "o.hpi, o.pe" in text and "o.note" not in text
     none = install_alert.build_script("011", er_gcs=False, spo2_cols=set())
-    assert "e ?[1-4]" not in none
+    assert "e *[1-4]" not in none
+
+
+def test_script_code_has_no_param_or_comment_chars():
+    """script ที่ใช้งานได้จริงไม่มี ? { } ในโค้ด — ? ถูกตัวเชื่อมฐานตีความเป็นพารามิเตอร์ / { } เป็นคอมเมนต์ Pascal
+    (23 ต.ค. 2026: regex ที่มี ? และ {0,12} ทำให้ script ใน hos_test ไม่ขึ้นอะไรเลย)"""
+    text = install_alert.build_script("011", avpu=True, er_gcs=True)
+    for n, ln in enumerate(text.splitlines(), 1):
+        code = ln.split("//")[0] if not ln.lstrip().startswith("'") else ln
+        assert not any(ch in code for ch in "?{}"), (n, ln)
