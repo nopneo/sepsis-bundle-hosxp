@@ -96,6 +96,31 @@ def _gcs_text(text_cols):
     return f'regexp_substr(lower(concat_ws(" ", {cols})), "e *[1-4] *v *[1-5t] *m *[1-6]")' if cols else ""
 
 
+# วลีบอกสติเปลี่ยนที่พยาบาลพิมพ์ใน CC/HPI/PE/หมายเหตุ — เฉพาะวลีที่ชัด (ข้อมูล 90 วัน ต.ค. 2026:
+# "ซึม" เดี่ยว ๆ ส่วนใหญ่คือ "เลือดซึม/แผลซึม" ~480 visit จึงใช้เฉพาะ "ซึมลง/ซึมมา/ดูซึม" และตัดกรณีของเหลวซึม
+# "หมดสติ" มักเป็นลมที่ฟื้นแล้ว ไม่นับ) · ห้ามใช้ ? และ { } ใน regex (script หยุดเงียบใน HOSxP)
+MENT_TEXT_COLS = ("cc",) + SPO2_TEXT_COLS
+MENT_SUEM = "ซึม *(ลง|มา)|ดูซึม"
+MENT_OOZE = "(เลือด|น้ำเหลือง|หนอง|แผล) *ซึม"
+MENT_OTHER = "สับสน|(เรียก|ปลุก) *ไม่ *ตื่น|ไม่รู้สึกตัว|drows|confus"
+MENT_NEG = "(ไม่มี|ไม่|ปฏิเสธ|no|not|deny|denies|denied|without) *"
+
+
+def _ment_text(text_cols):
+    cols = ", ".join(f"o.{c}" for c in MENT_TEXT_COLS if c in text_cols)
+    return f'lower(concat_ws(" ", {cols}))' if cols else ""
+
+
+def _ment_words(text_cols, altered):
+    t = _ment_text(text_cols)
+    if not t:
+        return ""
+    if not altered:     # มีการเขียนถึงสติ (รวมเชิงปฏิเสธ เช่น "ไม่สับสน") = ประเมินแล้ว
+        return f'({t} regexp "{MENT_OTHER}" or ({t} regexp "{MENT_SUEM}" and {t} not regexp "{MENT_OOZE}"))'
+    return (f'(({t} regexp "{MENT_OTHER}" and {t} not regexp "{MENT_NEG}({MENT_OTHER})") or '
+            f'({t} regexp "{MENT_SUEM}" and {t} not regexp "{MENT_OOZE}" and {t} not regexp "{MENT_NEG}({MENT_SUEM})"))')
+
+
 def _mentation(avpu, er_gcs, altered, text_cols=()):
     conds = []
     if avpu:
@@ -106,6 +131,9 @@ def _mentation(avpu, er_gcs, altered, text_cols=()):
     g = _gcs_text(text_cols)
     if g:   # ค่าแรกที่พิมพ์ ไม่ใช่ E4V5M6 = GCS < 15 (รวม VT ใส่ท่อช่วยหายใจ)
         conds.append(f'({g} <> "" and {g} not regexp "e *4 *v *5 *m *6")' if altered else f'{g} <> ""')
+    w = _ment_words(text_cols, altered)
+    if w:
+        conds.append(w)
     return " or ".join(conds)
 
 
@@ -125,7 +153,65 @@ def qsofa_known_sql(avpu, er_gcs, text_cols=()):
     return f"(case when {m} then 1 else 0 end)" if m else "0"
 
 
-def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=None, er_gcs=False):
+# SIRS (Bone 1992): T > 38 หรือ < 36, HR > 90, RR > 20, WBC > 12,000 หรือ < 4,000 หรือ Band > 10%
+# WBC/Band จากผล lab ของ visit นี้ (รหัส lab_items_code แต่ละ รพ. ไม่เหมือนกัน — ส่งผ่าน --wbc-items / --band-items)
+# ผลเก็บเป็นข้อความ: นับเฉพาะตัวเลขล้วน · หน่วย x10^3 (เช่น 9.6) หรือ cell (เช่น 9600) — >= 100 หาร 1000
+_LAB_NUM = '^[0-9]+[.]*[0-9]*$'
+
+
+def _codes(items):
+    codes = [c.strip() for c in (items or "").split(",") if c.strip()]
+    if not all(c.isdigit() for c in codes):
+        sys.exit("--wbc-items / --band-items ต้องเป็นรหัส lab_items_code ตัวเลข คั่นด้วยจุลภาค เช่น 35")
+    return ", ".join(codes)
+
+
+def _lab_exists(codes, cond):
+    return (f"exists(select 1 from lab_head h join lab_order lo on lo.lab_order_number = h.lab_order_number "
+            f'where h.vn = o.vn and lo.lab_items_code in ({codes}) and lo.lab_order_result regexp "{_LAB_NUM}"'
+            f"{cond})")
+
+
+def _wbc_abnormal(wbc, band):
+    conds = []
+    if wbc:
+        v = "(lo.lab_order_result + 0)"
+        conds.append(_lab_exists(wbc, f" and (if({v} >= 100, {v} / 1000, {v}) > 12 "
+                                      f"or if({v} >= 100, {v} / 1000, {v}) < 4)"))
+    if band:
+        conds.append(_lab_exists(band, " and (lo.lab_order_result + 0) > 10"))
+    return " or ".join(conds)
+
+
+def sirs_sql(wbc="", band=""):
+    """คะแนน SIRS 0-4 ต่อ 1 แถว opdscreen (alias o) — ช่องว่าง/ค่าผิด (T <= 20, P/RR 0) ไม่นับ"""
+    parts = ["(case when o.temperature > 38 or (o.temperature > 20 and o.temperature < 36) then 1 else 0 end)",
+             "(case when o.pulse > 90 then 1 else 0 end)",
+             "(case when o.rr > 20 then 1 else 0 end)"]
+    w = _wbc_abnormal(_codes(wbc), _codes(band))
+    if w:
+        parts.append(f"(case when {w} then 1 else 0 end)")
+    return " + ".join(parts)
+
+
+def sirs_wbc_known_sql(wbc=""):
+    """1 = มีผล WBC ของ visit นี้แล้ว · 0 = ยังไม่มี (SIRS คิดจากสัญญาณชีพ 3 ข้อ)"""
+    codes = _codes(wbc)
+    return f"(case when {_lab_exists(codes, '')} then 1 else 0 end)" if codes else "0"
+
+
+# หน้าต่าง HOSxP ที่เรียก script แต่ไม่ใช่การบันทึกซักประวัติ — ไม่เตือน (ทดสอบด้วย --probe 23 ต.ค. 2026)
+# frmLabOrder = หน้าสั่ง LAB (เรียก 2 รอบ) · ERDetailEntryForm = ลงรายละเอียด ER ขั้นสุดท้ายก่อนส่งต่อ
+# บันทึกซักประวัติ = DoctorDeskForm (ต้องเตือนทุกครั้ง)
+SKIP_FORMS = "frmLabOrder,ERDetailEntryForm"
+
+# ข้อความทดสอบ: บอกหน้าต่างที่เปิดอยู่ตอน script ทำงาน — ใช้หาวิธีแยก "บันทึกซักประวัติ" ออกจาก "เปิดหน้าสั่ง Lab"
+PROBE_LINE = ("showmessage('PROBE ' + Screen.ActiveForm.Name + ' / ' + Screen.ActiveForm.Caption + "
+              "' / ' + Screen.ActiveForm.ClassName);")
+
+
+def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=None, er_gcs=False,
+                 wbc_items="", band_items="", probe=False, skip_forms=None):
     codes = [c.strip() for c in er_deps.split(",") if c.strip()]
     if not codes or not all(re.fullmatch(r"[0-9A-Za-z]{1,6}", c) for c in codes):
         sys.exit("--er-deps ต้องเป็นรหัสแผนก คั่นด้วยจุลภาค เช่น 011 หรือ 011,012")
@@ -142,16 +228,65 @@ def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=Non
         sys.exit("--spo2-alert ต้องเป็น 0-100 (0 = ไม่เตือน SpO2 แยก)")
     text = text.replace("{{SPO2_SQL}}", spo2_sql(spo2_cols))
     text = text.replace("{{SPO2_LT}}", str(spo2_alert))
-    text_cols = set(spo2_cols) if spo2_cols is not None else set(SPO2_TEXT_COLS)
+    text_cols = set(spo2_cols) if spo2_cols is not None else set(MENT_TEXT_COLS)
     text = text.replace("{{QSOFA_SQL}}", qsofa_sql(avpu, er_gcs, text_cols))
     text = text.replace("{{QSOFA_KNOWN_SQL}}", qsofa_known_sql(avpu, er_gcs, text_cols))
+    text = text.replace("{{SIRS_SQL}}", sirs_sql(wbc_items, band_items))
+    text = text.replace("{{SIRS_WBC_SQL}}", sirs_wbc_known_sql(wbc_items))
+    forms = [f.strip() for f in (SKIP_FORMS if skip_forms is None else skip_forms).split(",") if f.strip()]
+    if not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,60}", f) for f in forms):
+        sys.exit("--skip-forms ต้องเป็นชื่อหน้าต่าง HOSxP คั่นด้วยจุลภาค เช่น frmLabOrder")
+    text = text.replace("{{SKIP_FORMS_COND}}", " or ".join(f"(fform = '{f}')" for f in forms) or "(fform = '-')")
+    if probe:
+        anchor = "fvn := GetGlobalValue('VN');\n"
+        assert anchor in text
+        text = text.replace(anchor, anchor + PROBE_LINE + "\n", 1)
+    text = split_long_literals(text)
     text.encode("tis-620")          # ฐาน HOSxP ส่วนใหญ่เก็บ tis620 — อักษรนอกชุดนี้บันทึกไม่ได้
     return text.replace("\r\n", "\n").replace("\n", "\r\n")
+
+
+# script engine ของ HOSxP รับ literal '...' ได้ไม่เกิน 255 ตัวแบบ Delphi — ยาวกว่านี้ script หยุดเงียบ
+# (23 ต.ค. 2026: SQL SpO2/qSOFA ยาว 335-599 ตัวทำให้ hos_test ไม่ขึ้นอะไรเลย · script เดิมที่ใช้ได้ยาวสุด 238)
+LITERAL_MAX = 200
+_LITERAL = re.compile(r"'(?:[^'\n]|'')*'")
+
+
+def _split_sql(s, limit=LITERAL_MAX):
+    """ตัดข้อความเป็นท่อน <= limit ที่ช่องว่างนอก "..." (ไม่ตัดกลาง regex/ค่าคงที่) — ต่อกลับแล้วได้ข้อความเดิม"""
+    cuts, inq = [], False
+    for i, ch in enumerate(s):
+        if ch == '"':
+            inq = not inq
+        elif ch == " " and not inq:
+            cuts.append(i)
+    parts, start = [], 0
+    while len(s) - start > limit:
+        ok = [c for c in cuts if start < c <= start + limit]
+        end = ok[-1] if ok else next((c for c in cuts if c > start), len(s))
+        parts.append(s[start:end])
+        start = end
+    parts.append(s[start:])
+    return parts
+
+
+def split_long_literals(text, limit=LITERAL_MAX):
+    def fix(m):
+        inner = m.group(0)[1:-1]
+        if len(inner) <= limit:
+            return m.group(0)
+        return "'+\n'".join(_split_sql(inner, limit)).join("''")
+    out = []
+    for ln in text.split("\n"):
+        out.append(ln if ln.lstrip().startswith("//") else _LITERAL.sub(fix, ln))
+    return "\n".join(out)
 
 
 def connect(args):
     # ALERT_DB_PASS ใช้กับงานอัตโนมัติได้ (ตั้งเฉพาะในหน้าต่างคำสั่งนั้น ห้ามเขียนลงไฟล์) ไม่งั้นถามแบบซ่อน
     pw = os.environ.get("ALERT_DB_PASS") or getpass.getpass(f"รหัสผ่าน {args.user}@{args.host} (พิมพ์แล้วไม่แสดง): ")
+    if any(ord(ch) > 255 for ch in pw):
+        sys.exit("!! รหัสผ่านมีอักษรไทย — แป้นพิมพ์อาจเป็นภาษาไทยอยู่ สลับเป็นภาษาอังกฤษ (ปุ่ม ~ หรือ Alt+Shift) แล้วรันใหม่")
     try:
         c = pymysql.connect(host=args.host, port=args.port, user=args.user, password=pw, database=args.db,
                             charset="tis620", connect_timeout=10, autocommit=False)
@@ -239,6 +374,10 @@ def cmd_check(args):
     ge3, ge5, ge7, n, filled = (int(x or 0) for x in row)
     print(f"MEWS ผู้ใหญ่ {n} visit (กรอก AVPU {filled}) — >= 3: {ge3} · >= 5: {ge5} (~{ge5 / 90:.1f} ครั้ง/วัน)"
           f" · >= 7: {ge7}")
+    print("\nรหัส lab สำหรับ SIRS (ใส่ใน --wbc-items / --band-items ตอนติดตั้ง):")
+    for code, name, unit in q(cur, """select lab_items_code, lab_items_name, lab_items_unit from lab_items
+                                       where lab_items_name regexp "(^| )wbc count|white blood|^band" order by 1"""):
+        print(f"  {code:>6}  {name}  [{unit or '-'}]")
     c.close()
 
 
@@ -281,10 +420,18 @@ def cmd_install(args):
     avpu = "consciousness_level_type_id" in cols
     er_gcs = {"gcs_e", "gcs_v", "gcs_m"} <= table_cols(cur, "er_nursing_detail")
     new = build_script(args.er_deps, avpu=avpu, mews_alert=args.mews_alert,
-                       spo2_alert=args.spo2_alert, spo2_cols=cols, er_gcs=er_gcs)
+                       spo2_alert=args.spo2_alert, spo2_cols=cols, er_gcs=er_gcs,
+                       wbc_items=args.wbc_items, band_items=args.band_items, probe=args.probe,
+                       skip_forms=args.skip_forms)
+    if args.probe:
+        print("!! ฉบับทดสอบ (--probe): ขึ้นข้อความ PROBE ทุกครั้งที่ script ทำงาน")
+    print("SIRS: T/HR/RR" + (f" + WBC (lab {args.wbc_items})" if args.wbc_items else
+                             " (ไม่ได้ระบุ --wbc-items ข้อ WBC ไม่นับ)")
+          + (f" + Band (lab {args.band_items})" if args.band_items else ""))
     print("qSOFA: แสดงในหน้าต่าง Sepsis · ข้อสติใช้ "
           + (" + ".join(n for n, ok in (("AVPU", avpu), ("GCS ที่ ER", er_gcs),
-                                        ("GCS ในข้อความ HPI/PE", bool(_gcs_text(cols)))) if ok)
+                                        ("GCS ในข้อความ HPI/PE", bool(_gcs_text(cols))),
+                                        ("วลีใน CC/HPI เช่น ซึมลง/สับสน", bool(_ment_text(cols)))) if ok)
              or "(ไม่มีข้อมูล นับ 2 ข้อ)"))
     print(f"SpO2: อ่านจาก {', '.join(c for c in ('o2sat', *SPO2_TEXT_COLS) if c in cols) or '(ไม่มีช่อง)'} · "
           + (f"เตือนแยกเมื่อ SpO2 < {args.spo2_alert}%" if args.spo2_alert else "ไม่เตือนแยก"))
@@ -355,11 +502,18 @@ def main():
     ap.add_argument("--er-deps", help="รหัสแผนก ER (opdscreen.screen_dep) เช่น 011 หรือ 011,012")
     ap.add_argument("--mews-alert", type=int, default=5, help="เตือนแยกเมื่อ MEWS >= ค่านี้ (0 = ไม่เตือน)")
     ap.add_argument("--spo2-alert", type=int, default=92, help="เตือนแยกเมื่อ SpO2 ต่ำกว่าค่านี้ (0 = ไม่เตือน)")
+    ap.add_argument("--wbc-items", default="", help="รหัส lab_items_code ของ WBC สำหรับ SIRS เช่น 35 (ดูจากคำสั่ง check)")
+    ap.add_argument("--band-items", default="", help="รหัส lab_items_code ของ Band %% สำหรับ SIRS เช่น 2015")
     ap.add_argument("--backup", help="ไฟล์สำรองสำหรับ rollback")
     ap.add_argument("--replace", action="store_true", help="แทนที่ script อื่นของ รพ. ทั้งหมด")
     ap.add_argument("--force", action="store_true", help="rollback แม้ script ปัจจุบันไม่ใช่ของระบบนี้")
     ap.add_argument("--yes", action="store_true", help="ไม่ถามยืนยัน")
+    ap.add_argument("--skip-forms", default=SKIP_FORMS,
+                    help=f"ชื่อหน้าต่าง HOSxP ที่ไม่ต้องเตือน คั่นด้วยจุลภาค (ดูชื่อด้วย --probe) ค่าเริ่มต้น {SKIP_FORMS}")
+    ap.add_argument("--probe", action="store_true", help="ฉบับทดสอบ: ขึ้นชื่อหน้าต่างที่เรียก script (ฐานทดสอบเท่านั้น)")
     args = ap.parse_args()
+    if args.probe and (args.command != "install" or args.db == "hos"):
+        ap.error("--probe ใช้กับ install บนฐานทดสอบเท่านั้น (เช่น --db hos_test)")
     if args.command == "install" and not args.er_deps:
         ap.error("install ต้องระบุ --er-deps (ดูคำแนะนำจากคำสั่ง check)")
     if args.command == "rollback" and not args.backup:

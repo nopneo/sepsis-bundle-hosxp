@@ -147,9 +147,23 @@ def _n(x):
     return "–" if x is None else f"{x:g}"
 
 
+MISSING = "missing"
+VITAL_LABEL = {"sbp": "BP", "hr": "HR", "rr": "RR", "temp": "T", "spo2": "SpO₂"}
+
+
+def _m(x, unit=""):
+    """ค่าที่ยังไม่กรอกแสดง missing — เตือนว่าอาจลืมวัดหรือลืมบันทึก"""
+    return MISSING if x is None else f"{x:g}{unit}"
+
+
 def _vitals_text(v):
-    return (f"BP {_n(v.get('sbp'))}/{_n(v.get('dbp'))} · HR {_n(v.get('hr'))} · RR {_n(v.get('rr'))} · "
-            f"T {_n(v.get('temp'))} · SpO₂ {_n(v.get('spo2'))}{'%' if v.get('spo2') else ''}")
+    bp = MISSING if v.get("sbp") is None else f"{_n(v.get('sbp'))}/{_n(v.get('dbp'))}"
+    return (f"BP {bp} · HR {_m(v.get('hr'))} · RR {_m(v.get('rr'))} · "
+            f"T {_m(v.get('temp'))} · SpO₂ {_m(v.get('spo2'), '%')}")
+
+
+def _missing_vitals(v):
+    return [label for key, label in VITAL_LABEL.items() if v.get(key) is None]
 
 
 def _news2_text(n2):
@@ -167,6 +181,10 @@ def _triage_card(t):
     rows = [_card_title("🫀", "ประเมินแรกรับ (SSC 2026)"), {"type": "separator", "color": "#ece8f8"},
             _kv("NEWS2", _news2_text(t.get("news2"))),
             _kv("ชีพจร", _vitals_text(v))]
+    miss = _missing_vitals(v)
+    if miss:
+        rows.append(_text(f"⚠️ ยังไม่บันทึก {', '.join(miss)} — อาจลืมวัดหรือลืมบันทึกใน HOSxP",
+                          size="xs", color=PILL[False][1], weight="bold"))
     if t.get("shock"):
         rows.append(_kv("Shock", "⚠️ สงสัย (ความดันต่ำ / R57.2) → ยาปฏิชีวนะภายใน 1 ชม."))
     else:

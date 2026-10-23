@@ -150,3 +150,157 @@ def test_script_code_has_no_param_or_comment_chars():
     for n, ln in enumerate(text.splitlines(), 1):
         code = ln.split("//")[0] if not ln.lstrip().startswith("'") else ln
         assert not any(ch in code for ch in "?{}"), (n, ln)
+
+
+def test_script_literals_fit_hosxp_limit():
+    """literal '...' ยาวเกิน 255 ทำให้ script หยุดเงียบ (23 ต.ค. 2026: SQL SpO2/qSOFA 335-599 ตัว)"""
+    for kw in ({}, {"avpu": True, "er_gcs": True}):
+        text = install_alert.build_script("011", **kw)
+        for n, ln in enumerate(text.splitlines(), 1):
+            if ln.lstrip().startswith("//"):
+                continue
+            for lit in re.findall(r"'(?:[^'\n]|'')*'", ln):
+                assert len(lit) - 2 <= 250, (n, ln[:80])   # script SOS เดิมที่ใช้ได้จริงยาวสุด 238
+
+
+def test_numeric_queries_return_double():
+    """getsqldata ที่คืนจำนวนเต็มแล้วนำไปต่อข้อความ = script หยุดเงียบ (23 ต.ค. 2026: MEWS ทำให้ hos_test ไม่ขึ้นอะไร)
+    ค่าที่ใช้ได้จริง (SOS, T) เป็นทศนิยม — ห่อ concat(...) + 0 ทุกค่าที่เป็นผลคำนวณ"""
+    text = install_alert.build_script("011", avpu=True, er_gcs=True)
+    for alias in ("mews", "spo2", "q", "k"):
+        joined = text.replace("'+\r\n'", "")
+        end = joined.index(f" as {alias} from")
+        expr = joined[joined.rindex("getsqldata('select ", 0, end) + len("getsqldata('select "):end]
+        assert expr.startswith("concat(") and expr.endswith(") + 0"), alias
+
+
+def test_mews_qsofa_headline_red():
+    """MEWS / qSOFA เป็นแถวตัวใหญ่ขนาดเดียวกับ SOS Score สีแดงในทั้งหน้าต่างแดงและ ER (ผู้ใช้ขอ 23 ต.ค. 2026)"""
+    text = install_alert.build_script("011", avpu=True, er_gcs=True)
+    assert re.findall(r"lbScore2\.Font\.Color := (\d+);", text) == ["1315980", "1315980"]
+    assert text.count("lbScore2.Font.Height := -28;") == 2   # MEWS + qSOFA + SIRS + MAP แถวเดียว กรอบกว้าง 840 px
+    assert text.count("pnRed.Width := 840;") == 2 and text.count("frm.Width := 900;") == 2
+    assert text.count("lbScore2.Caption := 'MEWS = ' + fmews + '   ' + fqtext + '   SIRS = ' + fsirs + '/4   ' + fmaptext;") == 2
+    assert "'   MEWS ' + fmews" not in text                    # ไม่ซ้ำในบรรทัดสัญญาณชีพ
+
+
+def test_split_long_literals_keeps_sql():
+    sql = 'select ' + ' + '.join(f'(case when x{i} regexp "a *b c" then 1 else 0 end)' for i in range(20))
+    out = install_alert.split_long_literals(f"f := getsqldata('{sql}');")
+    pieces = re.findall(r"'((?:[^'\n]|'')*)'", out)
+    assert "".join(pieces) == sql and all(len(p) <= install_alert.LITERAL_MAX for p in pieces)
+    assert all(p.count('"') % 2 == 0 for p in pieces)     # ไม่ตัดกลาง "..."
+
+
+def qsofa_text(cc="", hpi="", text_cols=("cc", "hpi")):
+    """qSOFA ข้อสติจากวลีใน CC/HPI (sqlite + regexp ของ Python ซึ่งให้ผลเหมือน MariaDB กับ regex ชุดนี้)"""
+    db = sqlite3.connect(":memory:")
+    db.create_function("regexp", 2, lambda p, s: 1 if re.search(p, s or "") else 0)
+    db.create_function("concat_ws", -1, lambda sep, *a: sep.join(x for x in a if x is not None))
+    db.create_function("regexp_substr", 2, lambda s, p: (re.search(p, s or "") or [""])[0])
+    db.execute("create table opdscreen (vn, rr, bps, cc, hpi)")
+    db.execute("insert into opdscreen values ('1', 24, 120, ?, ?)", (cc, hpi))
+    q = db.execute(f"select {install_alert.qsofa_sql(False, False, set(text_cols))} from opdscreen o").fetchone()[0]
+    k = db.execute(f"select {install_alert.qsofa_known_sql(False, False, set(text_cols))} from opdscreen o").fetchone()[0]
+    return q, k
+
+
+@pytest.mark.parametrize("cc,hpi,expected", [
+    ("ไข้ ซึมมา 2 วัน", "", (2, 1)),
+    ("ไข้ซึมลง", "", (2, 1)),
+    ("", "ญาติว่าดูซึม เรียกไม่ค่อยตอบ", (2, 1)),
+    ("", "สับสน พูดไม่รู้เรื่อง", (2, 1)),
+    ("", "pt drowsy, confused", (2, 1)),
+    ("เรียกไม่ตื่น", "", (2, 1)),
+    ("ไม่รู้สึกตัว", "", (2, 1)),
+    ("", "ไม่สับสน รู้สึกตัวดี", (1, 1)),            # เชิงปฏิเสธ = ประเมินแล้ว ปกติ
+    ("", "no confusion", (1, 1)),
+    ("แผลที่ขา มีเลือดซึมมา", "", (1, 0)),           # ของเหลวซึม ไม่ใช่สติ
+    ("แผลซึม", "", (1, 0)),
+    ("ซึมเศร้า", "", (1, 0)),
+    ("ไข้ ไอ", "", (1, 0)),
+    ("ซึมมา 1 วัน", "", (2, 1)),
+])
+def test_qsofa_mentation_phrases(cc, hpi, expected):
+    assert qsofa_text(cc, hpi) == expected
+
+
+def test_qsofa_phrases_skip_missing_columns():
+    assert "o.cc" not in install_alert.qsofa_sql(False, False, {"hpi"})
+    assert "สับสน" not in install_alert.qsofa_sql(False, False, set())
+
+
+def sirs(t=None, p=None, rr=None, labs=(), wbc="35", band="2015"):
+    """SIRS ด้วยนิพจน์ SQL ตัวเดียวกับใน script (sqlite) — labs = [(lab_items_code, ผล)] ของ visit นี้"""
+    db = sqlite3.connect(":memory:")
+    db.create_function("regexp", 2, lambda pat, s: 1 if re.search(pat, s or "") else 0)
+    db.create_function("if", 3, lambda c, a, b: a if c else b)
+    db.execute("create table opdscreen (vn, temperature, pulse, rr)")
+    db.execute("create table lab_head (lab_order_number, vn)")
+    db.execute("create table lab_order (lab_order_number, lab_items_code, lab_order_result)")
+    db.execute("insert into opdscreen values ('1', ?, ?, ?)", (t, p, rr))
+    db.execute("insert into lab_head values (9, '1')")
+    db.executemany("insert into lab_order values (9, ?, ?)", labs)
+    s = db.execute(f"select {install_alert.sirs_sql(wbc, band)} from opdscreen o").fetchone()[0]
+    k = db.execute(f"select {install_alert.sirs_wbc_known_sql(wbc)} from opdscreen o").fetchone()[0]
+    return s, k
+
+
+@pytest.mark.parametrize("kw,expected", [
+    (dict(t=37, p=80, rr=18), (0, 0)),
+    (dict(t=38.5, p=95, rr=22), (3, 0)),                          # T > 38, HR > 90, RR > 20
+    (dict(t=38.0, p=90, rr=20), (0, 0)),                          # ขอบเขต: ต้องมากกว่า ไม่ใช่เท่ากับ
+    (dict(t=35.5, p=80, rr=18), (1, 0)),                          # ตัวเย็น < 36
+    (dict(t=0, p=0, rr=0), (0, 0)),                               # ช่องว่าง/0 ไม่นับ
+    (dict(t=37, p=80, rr=18, labs=[(35, "15.2")]), (1, 1)),       # WBC x10^3 > 12
+    (dict(t=37, p=80, rr=18, labs=[(35, "3.1")]), (1, 1)),        # WBC < 4
+    (dict(t=37, p=80, rr=18, labs=[(35, "9.6")]), (0, 1)),        # มีผล ปกติ
+    (dict(t=37, p=80, rr=18, labs=[(35, "15200")]), (1, 1)),      # หน่วย cell
+    (dict(t=37, p=80, rr=18, labs=[(35, "pending")]), (0, 0)),    # ไม่ใช่ตัวเลข = ยังไม่มีผล
+    (dict(t=37, p=80, rr=18, labs=[(35, "8"), (2015, "12")]), (1, 1)),   # Band > 10%
+    (dict(t=39, p=120, rr=30, labs=[(35, "18")]), (4, 1)),
+])
+def test_sirs(kw, expected):
+    assert sirs(**kw) == expected
+
+
+def test_sirs_without_lab_codes():
+    assert sirs(t=39, p=120, rr=30, labs=[(35, "18")], wbc="", band="") == (3, 0)
+    assert "lab_head" not in install_alert.sirs_sql("", "")
+
+
+def test_build_script_shows_sirs():
+    text = install_alert.build_script("011", wbc_items="35", band_items="2015")
+    assert "lab_items_code in (35)" in text and "lab_items_code in (2015)" in text
+    assert "(SIRS ยังไม่มีผล WBC)" in text and "{{" not in text
+
+
+def test_skip_alert_in_lab_order_window():
+    """HOSxP เรียก script ทุกครั้งที่บันทึก visit รวมหน้าสั่ง Lab (frmLabOrder) — หน้าซักประวัติต้องเตือนทุกครั้ง (23 ต.ค. 2026)"""
+    text = install_alert.build_script("011")
+    assert "fform := Screen.ActiveForm.Name;" in text
+    assert "if (fform = 'frmLabOrder') or (fform = 'ERDetailEntryForm') then\r\nbegin\r\n  fage := '0';" in text
+    assert text.index("fform := Screen.ActiveForm.Name;") < text.index("if fage > 14 then")
+    assert "SetGlobalValue" not in text and "{{" not in text
+    two = install_alert.build_script("011", skip_forms="frmLabOrder, frmDrugOrder")
+    assert "if (fform = 'frmLabOrder') or (fform = 'frmDrugOrder') then" in two
+    with pytest.raises(SystemExit):
+        install_alert.build_script("011", skip_forms="frm'; x")
+
+
+
+@pytest.mark.parametrize("bps,bpd,expected", [
+    (80, 40, 53), (120, 80, 93), (90, 60, 70),
+    (0, 0, 0), (None, None, 0), (120, 0, 0),        # ไม่ได้วัด = 0 -> script แสดง "MAP = missing"
+])
+def test_map(bps, bpd, expected):
+    """MAP = (SBP + 2 x DBP) / 3 ด้วยนิพจน์ใน script (sqlite)"""
+    text = install_alert.build_script("011")
+    sql = re.search(r"fmap := getsqldata\('select (.*?) as m '", text).group(1)
+    db = sqlite3.connect(":memory:")
+    db.create_function("if", 3, lambda c, a, b: a if c else b)
+    db.create_function("concat", 1, lambda x: str(x))
+    db.execute("create table opdscreen (bps, bpd)")
+    db.execute("insert into opdscreen values (?, ?)", (bps, bpd))
+    assert float(db.execute(f"select {sql} from opdscreen").fetchone()[0]) == expected
+    assert "if fmap < 65 then" in text and "'MAP = missing'" in text
