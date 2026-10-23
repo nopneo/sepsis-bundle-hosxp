@@ -53,3 +53,26 @@ def test_carrier_fluid_is_not_bolus():
 def test_empty_text():
     assert nurse_notes.parse("", TZ) == {}
     assert nurse_notes.parse(None, TZ) == {}
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("text,spo2", [
+    ("O2 sat 96", 96),                      # แบบที่พบมากที่สุด ไม่มี %
+    ("O2 sat : 96 %", 96),
+    ("o2sat 97%", 97),
+    ("O2 sat RA =97 %", 97),
+    ("O2 sat RA 99 %", 99),
+    ("o2satRA98%", 98),
+    ("SpO2 95%", 95),
+    ("O2 sat = 98%", 98),
+    ("BP 120/80 P 88 O2sat room air 94", 94),
+])
+def test_spo2_patterns(text, spo2):
+    assert nurse_notes.parse(text, TZ)["first_spo2"] == spo2
+
+
+@pytest.mark.parametrize("text", ["O2 sat 9", "O2 sat 120", "On O2 cannula 3 LPM"])
+def test_spo2_rejects_non_values(text):
+    assert "first_spo2" not in nurse_notes.parse(text, TZ)
