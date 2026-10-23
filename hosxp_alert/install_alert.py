@@ -3,6 +3,7 @@
     python install_alert.py check    --host <ip> [--db hos] --user <user>
     python install_alert.py install  --host <ip> [--db hos] --user <user> --er-deps 011[,012] [--mews-alert 5]
     python install_alert.py rollback --host <ip> [--db hos] --user <user> --backup backups/<ไฟล์>.pas
+    python install_alert.py wizard   [--wizard-port 8787]
 
 ถามรหัสผ่านแบบซ่อน ไม่เก็บรหัสในไฟล์ · ทดสอบกับฐานทดสอบก่อนฐานจริงเสมอ
 
@@ -13,18 +14,27 @@ install  : สำรอง script เดิมลง backups/ อัตโนม
            รวม AVPU ในคะแนนเองถ้ามีคอลัมน์ opdscreen.consciousness_level_type_id
            ถ้า script เดิมของ รพ. ไม่ใช่ script SOS แบบที่ระบบนี้รู้จัก จะไม่ทับให้ — ต้องรวมเอง หรือใส่ --replace
 rollback : คืน script จากไฟล์สำรอง (เขียนเฉพาะเมื่อ script ปัจจุบันเป็นของระบบนี้)
+wizard   : เปิดหน้าเว็บที่ localhost ให้กรอกฐาน + เลือกรหัสแผนก ER/lab จากรายการที่อ่านได้จริง แทนการพิมพ์ CLI flag
+           (รันครั้งเดียวตอนติดตั้ง ไม่ใช่ service ค้างถาวร — ทำงานเหมือนคำสั่ง install ทุกอย่าง แค่เปลี่ยนหน้าตา)
 
 สิทธิ์ที่ต้องใช้: SELECT, UPDATE (และ INSERT ถ้ายังไม่มีแถว SYS_VN_SCRIPT) บน hos.sys_app_script
 และ SELECT บน opdscreen, ovst, er_regist, vn_stat, kskdepartment, depcode_vn_script_allow (สำหรับ check)
 """
 
 import argparse
+import contextlib
 import getpass
 import hashlib
+import html
+import io
 import os
 import re
 import sys
+import webbrowser
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from types import SimpleNamespace
+from urllib.parse import parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "_vendor"))
@@ -282,14 +292,21 @@ def split_long_literals(text, limit=LITERAL_MAX):
     return "\n".join(out)
 
 
+def pymysql_connect(host, port, user, password, db):
+    """เชื่อมต่อฐาน HOSxP ตรง ๆ — แยกจาก connect() เพื่อให้วิซาร์ด (cmd_wizard) เรียกด้วยรหัสผ่านจากฟอร์มเว็บได้"""
+    if any(ord(ch) > 255 for ch in password):
+        raise ValueError("รหัสผ่านมีอักษรไทย — แป้นพิมพ์อาจเป็นภาษาไทยอยู่ สลับเป็นภาษาอังกฤษ (ปุ่ม ~ หรือ Alt+Shift) แล้วรันใหม่")
+    return pymysql.connect(host=host, port=port, user=user, password=password, database=db,
+                           charset="tis620", connect_timeout=10, autocommit=False)
+
+
 def connect(args):
     # ALERT_DB_PASS ใช้กับงานอัตโนมัติได้ (ตั้งเฉพาะในหน้าต่างคำสั่งนั้น ห้ามเขียนลงไฟล์) ไม่งั้นถามแบบซ่อน
     pw = os.environ.get("ALERT_DB_PASS") or getpass.getpass(f"รหัสผ่าน {args.user}@{args.host} (พิมพ์แล้วไม่แสดง): ")
-    if any(ord(ch) > 255 for ch in pw):
-        sys.exit("!! รหัสผ่านมีอักษรไทย — แป้นพิมพ์อาจเป็นภาษาไทยอยู่ สลับเป็นภาษาอังกฤษ (ปุ่ม ~ หรือ Alt+Shift) แล้วรันใหม่")
     try:
-        c = pymysql.connect(host=args.host, port=args.port, user=args.user, password=pw, database=args.db,
-                            charset="tis620", connect_timeout=10, autocommit=False)
+        c = pymysql_connect(args.host, args.port, args.user, pw, args.db)
+    except ValueError as exc:
+        sys.exit(f"!! {exc}")
     finally:
         pw = None
     return c
@@ -320,6 +337,47 @@ def kind(text):
     return "script อื่นของ รพ. (ต้องรวมเอง)"
 
 
+def fetch_er_dep_candidates(cur):
+    """แผนกที่ซักประวัติ visit ER (30 วัน) เรียงตามจำนวนมากไปน้อย — ใช้เลือก --er-deps"""
+    return q(cur, """
+            select s.screen_dep, k.department, count(*) n from er_regist e
+            join opdscreen s on s.vn = e.vn left join kskdepartment k on k.depcode = s.screen_dep
+            where e.vstdate >= curdate() - interval 30 day and s.bps > 0
+            group by s.screen_dep, k.department order by n desc limit 6""")
+
+
+def fetch_lab_item_candidates(cur):
+    """รหัส lab ที่ชื่อเข้าเกณฑ์ WBC/Band — ใช้เลือก --wbc-items / --band-items"""
+    return q(cur, """select lab_items_code, lab_items_name, lab_items_unit from lab_items
+                       where lab_items_name regexp "(^| )wbc count|white blood|^band" order by 1""")
+
+
+def estimate_alerts(cur, avpu):
+    """ประมาณจำนวนการเตือนจากข้อมูล 90 วันย้อนหลัง (อ่านอย่างเดียว)"""
+    est = q(cur, """
+        select count(*) from (
+          select s.temperature t,
+           if(s.temperature<=20,0,if(s.temperature between 36.1 and 38,0,if(s.temperature between 35.1 and 36,1,
+             if(s.temperature between 38.1 and 38.4,1,if(s.temperature<=35 or s.temperature>=38.5,2,0)))))
+          + if(s.bps<=50,0,if(s.bps between 101 and 180,0,if(s.bps between 91 and 100,1,if(s.bps between 181 and 199,1,
+             if(s.bps between 81 and 90,2,if(s.bps>=200,2,if(s.bps<=80,3,0)))))))
+          + if(s.pulse<=20,0,if(s.pulse between 51 and 100,0,if(s.pulse between 41 and 50,1,if(s.pulse between 100 and 120,1,
+             if(s.pulse between 121 and 139,2,if(s.pulse<=40,3,if(s.pulse>=140,3,0)))))))
+          + if(s.rr<=2,0,if(s.rr between 9 and 20,0,if(s.rr between 21 and 25,1,if(s.rr between 26 and 35,2,
+             if(s.rr>=35 or s.rr<=8,3,0))))) sos
+          from opdscreen s join vn_stat v on v.vn = s.vn
+          where s.vstdate >= curdate() - interval 90 day and v.age_y >= 15
+            and s.temperature > 0 and s.bps > 0 and s.pulse > 0 and s.rr > 0) x
+        where sos > 3 and (t >= 38 or (t > 20 and t < 36))""")[0][0]
+    row = q(cur, f"""
+        select sum(m >= 3), sum(m >= 5), sum(m >= 7), count(*), sum(a) from (
+          select {mews_sql(avpu)} m, {"consciousness_level_type_id is not null" if avpu else "0"} a
+          from (select s.* from opdscreen s join vn_stat v on v.vn = s.vn
+                where s.vstdate >= curdate() - interval 90 day and v.age_y >= 15) s) x""")[0]
+    ge3, ge5, ge7, n, filled = (int(x or 0) for x in row)
+    return {"est": est, "ge3": ge3, "ge5": ge5, "ge7": ge7, "n": n, "filled": filled}
+
+
 def cmd_check(args):
     c = connect(args)
     cur = c.cursor()
@@ -340,43 +398,17 @@ def cmd_check(args):
         print("\nอ่าน depcode_vn_script_allow ไม่ได้:", exc.args[-1])
 
     print("\nแผนกที่ซักประวัติ visit ER (30 วัน) — ใช้เลือก --er-deps:")
-    for dep, name, n in q(cur, """
-            select s.screen_dep, k.department, count(*) n from er_regist e
-            join opdscreen s on s.vn = e.vn left join kskdepartment k on k.depcode = s.screen_dep
-            where e.vstdate >= curdate() - interval 30 day and s.bps > 0
-            group by s.screen_dep, k.department order by n desc limit 6"""):
+    for dep, name, n in fetch_er_dep_candidates(cur):
         print(f"   {dep or '(ว่าง)':>6}  {n:>5} visit  {name or ''}")
 
-    est = q(cur, """
-        select count(*) from (
-          select s.temperature t,
-           if(s.temperature<=20,0,if(s.temperature between 36.1 and 38,0,if(s.temperature between 35.1 and 36,1,
-             if(s.temperature between 38.1 and 38.4,1,if(s.temperature<=35 or s.temperature>=38.5,2,0)))))
-          + if(s.bps<=50,0,if(s.bps between 101 and 180,0,if(s.bps between 91 and 100,1,if(s.bps between 181 and 199,1,
-             if(s.bps between 81 and 90,2,if(s.bps>=200,2,if(s.bps<=80,3,0)))))))
-          + if(s.pulse<=20,0,if(s.pulse between 51 and 100,0,if(s.pulse between 41 and 50,1,if(s.pulse between 100 and 120,1,
-             if(s.pulse between 121 and 139,2,if(s.pulse<=40,3,if(s.pulse>=140,3,0)))))))
-          + if(s.rr<=2,0,if(s.rr between 9 and 20,0,if(s.rr between 21 and 25,1,if(s.rr between 26 and 35,2,
-             if(s.rr>=35 or s.rr<=8,3,0))))) sos
-          from opdscreen s join vn_stat v on v.vn = s.vn
-          where s.vstdate >= curdate() - interval 90 day and v.age_y >= 15
-            and s.temperature > 0 and s.bps > 0 and s.pulse > 0 and s.rr > 0) x
-        where sos > 3 and (t >= 38 or (t > 20 and t < 36))""")[0][0]
-    print(f"\nประมาณการ: จะเตือนสงสัย Sepsis {est} ครั้งใน 90 วัน (~{est / 90:.1f} ครั้ง/วัน)")
-
     avpu = has_avpu(cur)
+    stats = estimate_alerts(cur, avpu)
+    print(f"\nประมาณการ: จะเตือนสงสัย Sepsis {stats['est']} ครั้งใน 90 วัน (~{stats['est'] / 90:.1f} ครั้ง/วัน)")
     print("\nช่อง AVPU (opdscreen.consciousness_level_type_id):", "มี" if avpu else "ไม่มี — MEWS คิด 4 ค่า")
-    row = q(cur, f"""
-        select sum(m >= 3), sum(m >= 5), sum(m >= 7), count(*), sum(a) from (
-          select {mews_sql(avpu)} m, {"consciousness_level_type_id is not null" if avpu else "0"} a
-          from (select s.* from opdscreen s join vn_stat v on v.vn = s.vn
-                where s.vstdate >= curdate() - interval 90 day and v.age_y >= 15) s) x""")[0]
-    ge3, ge5, ge7, n, filled = (int(x or 0) for x in row)
-    print(f"MEWS ผู้ใหญ่ {n} visit (กรอก AVPU {filled}) — >= 3: {ge3} · >= 5: {ge5} (~{ge5 / 90:.1f} ครั้ง/วัน)"
-          f" · >= 7: {ge7}")
+    print(f"MEWS ผู้ใหญ่ {stats['n']} visit (กรอก AVPU {stats['filled']}) — >= 3: {stats['ge3']} · >= 5: {stats['ge5']}"
+          f" (~{stats['ge5'] / 90:.1f} ครั้ง/วัน) · >= 7: {stats['ge7']}")
     print("\nรหัส lab สำหรับ SIRS (ใส่ใน --wbc-items / --band-items ตอนติดตั้ง):")
-    for code, name, unit in q(cur, """select lab_items_code, lab_items_name, lab_items_unit from lab_items
-                                       where lab_items_name regexp "(^| )wbc count|white blood|^band" order by 1"""):
+    for code, name, unit in fetch_lab_item_candidates(cur):
         print(f"  {code:>6}  {name}  [{unit or '-'}]")
     c.close()
 
@@ -413,6 +445,25 @@ def confirm(args, action):
         sys.exit("ยกเลิก")
 
 
+def install_summary_lines(args, cols, avpu, er_gcs):
+    """สรุปแหล่งข้อมูล SIRS/qSOFA/SpO2/MEWS ที่จะใช้จริงตามคอลัมน์ที่ฐานนี้มี — cmd_install พิมพ์ และวิซาร์ดใช้แสดง preview"""
+    lines = []
+    lines.append("SIRS: T/HR/RR" + (f" + WBC (lab {args.wbc_items})" if args.wbc_items else
+                                    " (ไม่ได้ระบุ --wbc-items ข้อ WBC ไม่นับ)")
+                  + (f" + Band (lab {args.band_items})" if args.band_items else ""))
+    lines.append("qSOFA: แสดงในหน้าต่าง Sepsis · ข้อสติใช้ "
+          + (" + ".join(n for n, ok in (("AVPU", avpu), ("GCS ที่ ER", er_gcs),
+                                        ("GCS ในข้อความ HPI/PE", bool(_gcs_text(cols))),
+                                        ("วลีใน CC/HPI เช่น ซึมลง/สับสน", bool(_ment_text(cols)))) if ok)
+             or "(ไม่มีข้อมูล นับ 2 ข้อ)"))
+    lines.append(f"SpO2: อ่านจาก {', '.join(c for c in ('o2sat', *SPO2_TEXT_COLS) if c in cols) or '(ไม่มีช่อง)'} · "
+          + (f"เตือนแยกเมื่อ SpO2 < {args.spo2_alert}%" if args.spo2_alert else "ไม่เตือนแยก"))
+    lines.append(f"MEWS: {'รวม AVPU' if avpu else 'ไม่มีช่อง AVPU คิด 4 ค่า'} · "
+          + (f"เตือนแยกเมื่อ MEWS >= {args.mews_alert}" if args.mews_alert
+             else "ไม่เตือนแยก (แสดงในหน้าต่าง Sepsis เท่านั้น)"))
+    return lines
+
+
 def cmd_install(args):
     c = connect(args)
     cur = c.cursor()
@@ -425,19 +476,8 @@ def cmd_install(args):
                        skip_forms=args.skip_forms)
     if args.probe:
         print("!! ฉบับทดสอบ (--probe): ขึ้นข้อความ PROBE ทุกครั้งที่ script ทำงาน")
-    print("SIRS: T/HR/RR" + (f" + WBC (lab {args.wbc_items})" if args.wbc_items else
-                             " (ไม่ได้ระบุ --wbc-items ข้อ WBC ไม่นับ)")
-          + (f" + Band (lab {args.band_items})" if args.band_items else ""))
-    print("qSOFA: แสดงในหน้าต่าง Sepsis · ข้อสติใช้ "
-          + (" + ".join(n for n, ok in (("AVPU", avpu), ("GCS ที่ ER", er_gcs),
-                                        ("GCS ในข้อความ HPI/PE", bool(_gcs_text(cols))),
-                                        ("วลีใน CC/HPI เช่น ซึมลง/สับสน", bool(_ment_text(cols)))) if ok)
-             or "(ไม่มีข้อมูล นับ 2 ข้อ)"))
-    print(f"SpO2: อ่านจาก {', '.join(c for c in ('o2sat', *SPO2_TEXT_COLS) if c in cols) or '(ไม่มีช่อง)'} · "
-          + (f"เตือนแยกเมื่อ SpO2 < {args.spo2_alert}%" if args.spo2_alert else "ไม่เตือนแยก"))
-    print(f"MEWS: {'รวม AVPU' if avpu else 'ไม่มีช่อง AVPU คิด 4 ค่า'} · "
-          + (f"เตือนแยกเมื่อ MEWS >= {args.mews_alert}" if args.mews_alert
-             else "ไม่เตือนแยก (แสดงในหน้าต่าง Sepsis เท่านั้น)"))
+    for line in install_summary_lines(args, cols, avpu, er_gcs):
+        print(line)
     row = current(cur)
     k = kind(row[1] if row else None)
     print(f"script ปัจจุบัน: {k}")
@@ -492,13 +532,337 @@ def cmd_rollback(args):
     c.close()
 
 
+# ---------------------------------------------------------------------------
+# วิซาร์ดตั้งค่า: หน้าเว็บเดียว รันครั้งเดียวตอนติดตั้ง (ไม่ใช่ service ค้างถาวร) ใช้ http.server ของ Python เอง
+# ไม่เพิ่ม dependency ให้ รพ. อื่น — เรียก fetch_er_dep_candidates/estimate_alerts/build_script/cmd_install
+# ตัวเดิมซ้ำ ไม่เขียน logic ติดตั้งคู่กับ CLI
+# ---------------------------------------------------------------------------
+
+_WIZ = {}   # เก็บ connection + ข้อมูลเชื่อมต่อระหว่างขั้นตอน — วิซาร์ดใช้คนเดียวต่อครั้ง ไม่มีการแข่งกันเขียน
+
+WIZARD_CSS = """
+<style>
+body{font-family:"Segoe UI",Tahoma,sans-serif;max-width:800px;margin:24px auto 60px;padding:0 16px;
+     color:#1f2430;background:#f6f6fb}
+h1{font-size:21px;margin-bottom:4px} h2{font-size:16px;margin-top:26px}
+p.hint{color:#5a6072;font-size:13.5px}
+label{display:block;margin-top:14px;font-weight:600;font-size:14.5px}
+input[type=text],input[type=password],input[type=number]{width:100%;padding:8px 10px;margin-top:4px;
+     border:1px solid #c6c9d6;border-radius:8px;font-size:15px;box-sizing:border-box}
+table{border-collapse:collapse;width:100%;margin-top:10px;font-size:14px}
+td,th{border:1px solid #dcdfe8;padding:6px 10px;text-align:left}
+th{background:#eceefa}
+button{margin-top:22px;padding:10px 20px;border:none;border-radius:8px;background:#4b3fd1;color:#fff;
+     font-size:15px;cursor:pointer}
+pre{background:#11141c;color:#d8dbe8;padding:14px;border-radius:8px;overflow-x:auto;font-size:13px;
+     white-space:pre-wrap}
+.err{background:#fde2e2;border:1px solid #f3a0a0;color:#8a1f1f;padding:10px 14px;border-radius:8px;margin-top:14px}
+.warn{background:#fff3cd;border:1px solid #f0d38a;color:#7a5b00;padding:10px 14px;border-radius:8px;margin-top:14px}
+details{border:1px solid #dcdfe8;border-radius:8px;margin-top:18px;padding:8px 14px}
+summary{cursor:pointer;font-weight:600}
+</style>
+"""
+
+
+def _esc(v):
+    return html.escape(str(v if v is not None else ""))
+
+
+def _wiz_page(title, body):
+    return (f"<!doctype html><html lang='th'><head><meta charset='utf-8'>"
+            f"<title>{_esc(title)}</title>{WIZARD_CSS}</head><body>{body}</body></html>")
+
+
+def _form(handler):
+    length = int(handler.headers.get("Content-Length", 0) or 0)
+    body = handler.rfile.read(length).decode("utf-8") if length else ""
+    return parse_qs(body, keep_blank_values=True)
+
+
+def _first(form, key, default=""):
+    v = form.get(key)
+    return v[0] if v else default
+
+
+def _int(form, key, default):
+    try:
+        return int(_first(form, key, str(default)))
+    except ValueError:
+        return default
+
+
+def _connect_page(error=None, host="", port=3306, db="hos", user=""):
+    err_html = f'<div class="err">{_esc(error)}</div>' if error else ""
+    body = f"""
+<h1>วิซาร์ดติดตั้งหน้าต่างเตือน Sepsis ใน HOSxP</h1>
+<p class="hint">กรอกข้อมูลเชื่อมต่อฐาน HOSxP (MariaDB/MySQL) — รหัสผ่านไม่ถูกบันทึกลงไฟล์ใด ๆ
+ทดสอบกับฐานทดสอบก่อนฐานจริงเสมอ</p>
+{err_html}
+<form method="post" action="/connect">
+  <label>Host<input type="text" name="host" value="{_esc(host)}" required></label>
+  <label>Port<input type="number" name="port" value="{_esc(port)}"></label>
+  <label>ชื่อฐานข้อมูล (database)<input type="text" name="db" value="{_esc(db)}"></label>
+  <label>User<input type="text" name="user" value="{_esc(user)}" required></label>
+  <label>Password<input type="password" name="password" required></label>
+  <button type="submit">เชื่อมต่อ</button>
+</form>"""
+    return _wiz_page("วิซาร์ดติดตั้ง Sepsis Alert", body)
+
+
+def _select_page(cur, conn_info, error=None, picked=None):
+    picked = picked or {}
+    er_sel = set(picked.get("er_deps", []))
+    wbc_sel = set(picked.get("wbc_items", []))
+    band_sel = set(picked.get("band_items", []))
+
+    row = current(cur)
+    k = kind(row[1] if row else None)
+
+    dep_rows = "".join(
+        f'<tr><td><input type="checkbox" name="er_deps" value="{_esc(dep)}"'
+        f'{" checked" if dep in er_sel else ""}></td>'
+        f'<td>{_esc(dep or "(ว่าง)")}</td><td>{_esc(name or "")}</td><td>{n}</td></tr>'
+        for dep, name, n in fetch_er_dep_candidates(cur))
+    if not dep_rows:
+        dep_rows = ('<tr><td colspan="4">ไม่พบ visit ER ใน 30 วันหลัง — ใส่รหัสแผนกเองไม่ได้ในหน้านี้ '
+                   "ใช้ CLI --er-deps แทน</td></tr>")
+
+    lab_rows = "".join(
+        f'<tr><td>{_esc(code)}</td><td>{_esc(name)}</td><td>{_esc(unit or "-")}</td>'
+        f'<td><input type="checkbox" name="wbc_items" value="{_esc(code)}"'
+        f'{" checked" if code in wbc_sel else ""}></td>'
+        f'<td><input type="checkbox" name="band_items" value="{_esc(code)}"'
+        f'{" checked" if code in band_sel else ""}></td></tr>'
+        for code, name, unit in fetch_lab_item_candidates(cur))
+    if not lab_rows:
+        lab_rows = ('<tr><td colspan="5">ไม่พบรหัส lab ที่ชื่อเข้าเกณฑ์ WBC/Band — ข้ามได้ '
+                   "(SIRS จะไม่นับข้อ WBC/Band)</td></tr>")
+
+    err_html = f'<div class="err">{_esc(error)}</div>' if error else ""
+    body = f"""
+<h1>เลือกค่าตั้งค่า</h1>
+<p class="hint">เชื่อมต่อ {_esc(conn_info['user'])}@{_esc(conn_info['host'])}/{_esc(conn_info['db'])} สำเร็จ ·
+script ปัจจุบัน: {_esc(k)}</p>
+{err_html}
+<form method="post" action="/preview">
+<h2>แผนก ER (opdscreen.screen_dep) — ติ๊กได้มากกว่า 1 ข้อ</h2>
+<table><tr><th></th><th>รหัสแผนก</th><th>ชื่อแผนก</th><th>visit ER 30 วัน</th></tr>
+{dep_rows}
+</table>
+
+<h2>รหัส lab สำหรับ SIRS (WBC / Band %) — ไม่บังคับเลือก</h2>
+<table><tr><th>รหัส</th><th>ชื่อ lab</th><th>หน่วย</th><th>WBC</th><th>Band</th></tr>
+{lab_rows}
+</table>
+
+<details><summary>ตั้งค่าขั้นสูง (ปรับได้ ไม่บังคับ)</summary>
+  <label>เตือนแยกเมื่อ MEWS >= <input type="number" name="mews_alert" value="{_esc(picked.get('mews_alert', 5))}"></label>
+  <label>เตือนแยกเมื่อ SpO2 ต่ำกว่า (%) <input type="number" name="spo2_alert" value="{_esc(picked.get('spo2_alert', 92))}"></label>
+  <label>ชื่อหน้าต่าง HOSxP ที่ไม่ต้องเตือน (คั่นด้วยจุลภาค)
+    <input type="text" name="skip_forms" value="{_esc(picked.get('skip_forms', SKIP_FORMS))}"></label>
+  <label><input type="checkbox" name="replace" value="1"{" checked" if picked.get("replace") else ""}>
+    แทนที่ script เดิมทั้งหมด (ใช้เมื่อ script เดิมของ รพ. ไม่ใช่แบบที่ระบบนี้รู้จัก)</label>
+</details>
+
+<button type="submit">ดูตัวอย่างก่อนติดตั้งจริง</button>
+</form>
+<p><a href="/">← เชื่อมต่อฐานอื่น</a></p>"""
+    return _wiz_page("เลือกค่าตั้งค่า", body)
+
+
+def _preview_page(args, lines, k, already_same, warn_replace, stats):
+    lines_html = "\n".join(_esc(ln) for ln in lines)
+    stat_line = (f"ประมาณการจากข้อมูล 90 วัน: สงสัย Sepsis ~{stats['est'] / 90:.1f} ครั้ง/วัน · "
+                f"MEWS >= 5 ~{stats['ge5'] / 90:.1f} ครั้ง/วัน")
+    warn_html = ""
+    if already_same:
+        warn_html = '<div class="warn">script ฉบับนี้ติดตั้งอยู่แล้ว — กดยืนยันจะไม่มีอะไรเปลี่ยน</div>'
+    elif warn_replace:
+        warn_html = ('<div class="warn">script เดิมของ รพ. ไม่ใช่แบบที่ระบบนี้รู้จัก — ถ้าตั้งใจแทนที่ทั้งหมด '
+                     'ย้อนไปติ๊ก "แทนที่ script เดิมทั้งหมด" ก่อน ไม่งั้นกดยืนยันจะไม่ผ่าน</div>')
+
+    def hid(name, value):
+        return f'<input type="hidden" name="{name}" value="{_esc(value)}">'
+
+    hidden = "".join([
+        "".join(hid("er_deps", c) for c in args.er_deps.split(",") if c),
+        "".join(hid("wbc_items", c) for c in args.wbc_items.split(",") if c),
+        "".join(hid("band_items", c) for c in args.band_items.split(",") if c),
+        hid("mews_alert", args.mews_alert), hid("spo2_alert", args.spo2_alert),
+        hid("skip_forms", args.skip_forms), hid("replace", "1" if args.replace else ""),
+    ])
+    body = f"""
+<h1>ตรวจสอบก่อนติดตั้งจริง</h1>
+<p class="hint">script ปัจจุบัน: {_esc(k)} · {_esc(stat_line)}</p>
+<pre>{lines_html}</pre>
+{warn_html}
+<form method="post" action="/install">
+{hidden}
+<button type="submit">ยืนยันเขียนจริง</button>
+</form>
+<p><a href="javascript:history.back()">← กลับไปแก้ค่า</a></p>"""
+    return _wiz_page("ตรวจสอบก่อนติดตั้ง", body)
+
+
+def _result_page(output_text):
+    body = f"""
+<h1>ผลการติดตั้ง</h1>
+<pre>{_esc(output_text)}</pre>
+<p class="hint">ปิดแท็บนี้ได้แล้วกด Ctrl+C ที่ terminal เพื่อหยุดวิซาร์ด</p>"""
+    return _wiz_page("ผลการติดตั้ง", body)
+
+
+def _build_wizard_args(form):
+    w = _WIZ
+    return SimpleNamespace(
+        host=w["host"], port=w["port"], db=w["db"], user=w["user"],
+        er_deps=",".join(form.get("er_deps", [])),
+        mews_alert=_int(form, "mews_alert", 5),
+        spo2_alert=_int(form, "spo2_alert", 92),
+        wbc_items=",".join(form.get("wbc_items", [])),
+        band_items=",".join(form.get("band_items", [])),
+        backup=None, replace=bool(_first(form, "replace")), force=False,
+        yes=True, skip_forms=_first(form, "skip_forms", SKIP_FORMS) or SKIP_FORMS,
+        probe=False)
+
+
+class WizardHandler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *a):
+        pass   # เงียบ ไม่ปนกับข้อความบน terminal
+
+    def _send(self, body, status=200):
+        data = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if self.path == "/":
+            self._send(_connect_page())
+        else:
+            self._send(_wiz_page("ไม่พบหน้านี้", "<p>ไม่พบหน้านี้ — <a href='/'>กลับหน้าแรก</a></p>"), 404)
+
+    def do_POST(self):
+        form = _form(self)
+        try:
+            {"/connect": self._handle_connect, "/preview": self._handle_preview,
+             "/install": self._handle_install}.get(
+                self.path, lambda f: self._send(_wiz_page("ไม่พบหน้านี้", "<p>ไม่พบหน้านี้</p>"), 404))(form)
+        except Exception as exc:   # กันวิซาร์ดล้มทั้งตัวจาก error ที่ไม่คาดคิด (เช่น หลุดการเชื่อมต่อฐาน)
+            self._send(_wiz_page("ผิดพลาด", f"<div class='err'>{_esc(exc)}</div><p><a href='/'>กลับหน้าแรก</a></p>"), 500)
+
+    def _handle_connect(self, form):
+        host = _first(form, "host")
+        port = _int(form, "port", 3306)
+        db = _first(form, "db", "hos") or "hos"
+        user = _first(form, "user")
+        password = _first(form, "password")
+        try:
+            conn = pymysql_connect(host, port, user, password, db)
+        except ValueError as exc:
+            self._send(_connect_page(error=str(exc), host=host, port=port, db=db, user=user))
+            return
+        except Exception as exc:
+            self._send(_connect_page(error=f"เชื่อมต่อไม่ได้: {exc}", host=host, port=port, db=db, user=user))
+            return
+        old = _WIZ.get("conn")
+        if old:
+            try:
+                old.close()
+            except Exception:
+                pass
+        _WIZ.clear()
+        _WIZ.update(host=host, port=port, db=db, user=user, password=password, conn=conn)
+        self._send(_select_page(conn.cursor(), _WIZ))
+
+    def _handle_preview(self, form):
+        conn = _WIZ.get("conn")
+        if not conn:
+            self._send(_connect_page(error="การเชื่อมต่อหมดอายุ กรุณาเชื่อมต่อใหม่"))
+            return
+        cur = conn.cursor()
+        args = _build_wizard_args(form)
+        picked = dict(er_deps=form.get("er_deps", []), wbc_items=form.get("wbc_items", []),
+                     band_items=form.get("band_items", []), mews_alert=args.mews_alert,
+                     spo2_alert=args.spo2_alert, skip_forms=args.skip_forms, replace=args.replace)
+        cols = opdscreen_cols(cur)
+        avpu = "consciousness_level_type_id" in cols
+        er_gcs = {"gcs_e", "gcs_v", "gcs_m"} <= table_cols(cur, "er_nursing_detail")
+        try:
+            new_script = build_script(args.er_deps, avpu=avpu, mews_alert=args.mews_alert,
+                                      spo2_alert=args.spo2_alert, spo2_cols=cols, er_gcs=er_gcs,
+                                      wbc_items=args.wbc_items, band_items=args.band_items,
+                                      skip_forms=args.skip_forms)
+        except SystemExit as exc:
+            self._send(_select_page(cur, _WIZ, error=str(exc.code), picked=picked))
+            return
+        row = current(cur)
+        k = kind(row[1] if row else None)
+        already_same = bool(row and row[1].replace("\r\n", "\n") == new_script.replace("\r\n", "\n"))
+        warn_replace = k.startswith("script อื่น") and not args.replace
+        lines = install_summary_lines(args, cols, avpu, er_gcs)
+        stats = estimate_alerts(cur, avpu)
+        self._send(_preview_page(args, lines, k, already_same, warn_replace, stats))
+
+    def _handle_install(self, form):
+        if not _WIZ.get("conn"):
+            self._send(_connect_page(error="การเชื่อมต่อหมดอายุ กรุณาเชื่อมต่อใหม่"))
+            return
+        args = _build_wizard_args(form)
+        buf = io.StringIO()
+        os.environ["ALERT_DB_PASS"] = _WIZ["password"]
+        try:
+            with contextlib.redirect_stdout(buf):
+                try:
+                    cmd_install(args)
+                except SystemExit as exc:
+                    print(exc.code or "")
+        finally:
+            os.environ.pop("ALERT_DB_PASS", None)
+            conn = _WIZ.pop("conn", None)
+            _WIZ.clear()
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        self._send(_result_page(buf.getvalue()))
+
+
+def cmd_wizard(args):
+    try:
+        server = HTTPServer(("127.0.0.1", args.wizard_port), WizardHandler)
+    except OSError as exc:
+        sys.exit(f"!! เปิดพอร์ต {args.wizard_port} ไม่ได้ ({exc}) — ลองใส่ --wizard-port พอร์ตอื่น")
+    url = f"http://127.0.0.1:{args.wizard_port}/"
+    print(f"วิซาร์ดเปิดที่ {url} (ถ้าเบราว์เซอร์ไม่เปิดเอง ให้เปิดลิงก์นี้เอง)")
+    print("กด Ctrl+C ที่นี่เพื่อหยุดวิซาร์ด")
+    webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        conn = _WIZ.pop("conn", None)
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        server.server_close()
+        print("\nปิดวิซาร์ดแล้ว")
+
+
 def main():
     ap = argparse.ArgumentParser(description="ติดตั้งหน้าต่างเตือนสงสัย Sepsis ใน HOSxP (SYS_VN_SCRIPT)")
-    ap.add_argument("command", choices=["check", "install", "rollback"])
-    ap.add_argument("--host", required=True)
+    ap.add_argument("command", choices=["check", "install", "rollback", "wizard"])
+    ap.add_argument("--host")
     ap.add_argument("--port", type=int, default=3306)
     ap.add_argument("--db", default="hos")
-    ap.add_argument("--user", required=True)
+    ap.add_argument("--user")
+    ap.add_argument("--wizard-port", type=int, default=8787, help="พอร์ตสำหรับเปิดวิซาร์ดในเบราว์เซอร์ (ค่าเริ่มต้น 8787)")
     ap.add_argument("--er-deps", help="รหัสแผนก ER (opdscreen.screen_dep) เช่น 011 หรือ 011,012")
     ap.add_argument("--mews-alert", type=int, default=5, help="เตือนแยกเมื่อ MEWS >= ค่านี้ (0 = ไม่เตือน)")
     ap.add_argument("--spo2-alert", type=int, default=92, help="เตือนแยกเมื่อ SpO2 ต่ำกว่าค่านี้ (0 = ไม่เตือน)")
@@ -512,13 +876,16 @@ def main():
                     help=f"ชื่อหน้าต่าง HOSxP ที่ไม่ต้องเตือน คั่นด้วยจุลภาค (ดูชื่อด้วย --probe) ค่าเริ่มต้น {SKIP_FORMS}")
     ap.add_argument("--probe", action="store_true", help="ฉบับทดสอบ: ขึ้นชื่อหน้าต่างที่เรียก script (ฐานทดสอบเท่านั้น)")
     args = ap.parse_args()
+    if args.command != "wizard" and (not args.host or not args.user):
+        ap.error("ต้องระบุ --host และ --user")
     if args.probe and (args.command != "install" or args.db == "hos"):
         ap.error("--probe ใช้กับ install บนฐานทดสอบเท่านั้น (เช่น --db hos_test)")
     if args.command == "install" and not args.er_deps:
         ap.error("install ต้องระบุ --er-deps (ดูคำแนะนำจากคำสั่ง check)")
     if args.command == "rollback" and not args.backup:
         ap.error("rollback ต้องระบุ --backup")
-    {"check": cmd_check, "install": cmd_install, "rollback": cmd_rollback}[args.command](args)
+    {"check": cmd_check, "install": cmd_install, "rollback": cmd_rollback,
+     "wizard": cmd_wizard}[args.command](args)
 
 
 if __name__ == "__main__":
