@@ -20,6 +20,7 @@ from werkzeug.security import check_password_hash
 import config
 import db
 import flex
+import login_guard
 import moph_notify
 import queries
 
@@ -43,11 +44,55 @@ class PrefixMiddleware:
         return self.wsgi_app(environ, start_response)
 
 
+SECRET_KEY_PATH = os.path.join(config.BASE_DIR, "data", "secret_key")
+
+
+def _secret_key():
+    """กุญแจเซ็น cookie — ใครรู้ค่านี้ปลอม cookie "ปลดล็อกแล้ว" ได้เองโดยไม่ต้องรู้รหัส
+
+    ใช้ SEPSIS_SECRET_KEY ถ้าตั้งไว้ (ต้องยาวอย่างน้อย 32 ตัวอักษร) ไม่งั้นสุ่มครั้งแรกแล้วเก็บที่
+    data/secret_key (สิทธิ์ 600) — ทุก worker ใช้ค่าเดียวกัน และไม่เปลี่ยนเมื่อรีสตาร์ต
+    """
+    env = os.getenv("SEPSIS_SECRET_KEY", "").strip()
+    if env:
+        if len(env) < 32:
+            raise RuntimeError("SEPSIS_SECRET_KEY สั้นเกินไป (ต้อง ≥ 32 ตัวอักษร) — "
+                               "สุ่มใหม่: python -c \"import secrets; print(secrets.token_hex(32))\" "
+                               "หรือลบบรรทัดนี้ออกให้ระบบสุ่มเก็บไว้ใน data/secret_key เอง")
+        return env
+    os.makedirs(os.path.dirname(SECRET_KEY_PATH), exist_ok=True)
+    try:
+        fd = os.open(SECRET_KEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        pass                    # worker อื่นสร้างไว้แล้ว
+    else:
+        with os.fdopen(fd, "w") as f:
+            f.write(secrets.token_hex(32))
+    for _ in range(50):         # worker อื่นอาจสร้างไฟล์แล้วแต่ยังเขียนไม่เสร็จ
+        key = open(SECRET_KEY_PATH, encoding="ascii").read().strip()
+        if key:
+            return key
+        time.sleep(0.05)
+    raise RuntimeError(f"{SECRET_KEY_PATH} ว่าง — ลบไฟล์แล้วรีสตาร์ตแอป")
+
+
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
-# ต้องตั้ง SEPSIS_SECRET_KEY ใน .env เมื่อรัน gunicorn หลาย worker ไม่งั้นสถานะปลดล็อกจะหลุดสลับไปมา
-app.secret_key = os.getenv("SEPSIS_SECRET_KEY") or secrets.token_hex(32)
+app.secret_key = _secret_key()
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SEPSIS_UNLOCK_HOURS", "8")))
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+
+
+@app.after_request
+def _security_headers(resp):
+    """ห้ามฝังหน้าในเว็บอื่น (clickjacking), ห้ามเดาชนิดไฟล์, ไม่ส่ง URL ไปเว็บอื่น
+    และห้ามเก็บหน้าที่มีข้อมูลผู้ป่วยไว้ใน cache ของเบราว์เซอร์/proxy"""
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    if not request.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 # รหัสดู HN/AN — เก็บเฉพาะ hash (generate_password_hash(pw, method="pbkdf2:sha256")) ไม่เก็บรหัสจริง
 # ไม่ตั้งค่า = แสดง HN/AN ตามปกติ (แบบเดิม)
@@ -188,20 +233,49 @@ def settings_unlocked():
     return session.get("settings_until", 0) > time.time()
 
 
+#: รหัสหน้าตั้งค่าแจ้งเตือน — แยกจากรหัสดู HN/AN ที่แจกให้เจ้าหน้าที่หลายคน
+#: (ใครเข้าหน้านี้ได้ก็เปลี่ยน key ของ MOPH Notify จนการแจ้งเตือนเคส sepsis หยุดหรือไปผิดกลุ่มได้)
+#: SEPSIS_SETTINGS_PASSWORD_HASH (แนะนำ) หรือ SEPSIS_SETTINGS_PASSWORD (รหัสตรง ๆ แบบเดิม)
+#: ไม่ตั้งทั้งคู่ = เปิดหน้าตั้งค่าได้เฉพาะจากเครื่องเซิร์ฟเวอร์เอง
+SETTINGS_PASSWORD_HASH = os.getenv("SEPSIS_SETTINGS_PASSWORD_HASH", "").strip()
+SETTINGS_PASSWORD = os.getenv("SEPSIS_SETTINGS_PASSWORD", "")
+
+
+def settings_password_set():
+    return bool(SETTINGS_PASSWORD_HASH or SETTINGS_PASSWORD)
+
+
+def _password_ok(scope, password):
+    if not password:
+        return False
+    if scope == "settings":
+        if SETTINGS_PASSWORD_HASH:
+            return check_password_hash(SETTINGS_PASSWORD_HASH, password)
+        return bool(SETTINGS_PASSWORD) and hmac.compare_digest(password.encode(), SETTINGS_PASSWORD.encode())
+    return bool(VIEW_PASSWORD_HASH) and check_password_hash(VIEW_PASSWORD_HASH, password)
+
+
 @app.route("/unlock", methods=["GET", "POST"])
 def unlock():
     scope = "settings" if request.values.get("scope") == "settings" else "view"
     error = None
+    ip = request.remote_addr or "?"
     if request.method == "POST":
-        if VIEW_PASSWORD_HASH and check_password_hash(VIEW_PASSWORD_HASH, request.form.get("password", "")):
+        wait = login_guard.wait_seconds(ip)
+        if wait:
+            error = f"กรอกรหัสผิดหลายครั้ง — ลองใหม่ในอีก {wait // 60 + 1} นาที"
+        elif _password_ok(scope, request.form.get("password", "")):
+            login_guard.reset(ip)
             session.permanent = True
             if scope == "settings":
                 session["settings_until"] = time.time() + SETTINGS_UNLOCK_SECONDS
             else:
                 session["unlocked"] = True
             return redirect(_safe_next())
-        time.sleep(1)  # หน่วงการเดารหัส
-        error = "รหัสไม่ถูกต้อง"
+        else:
+            login_guard.record_failure(ip)
+            app.logger.warning("unlock ผิด scope=%s ip=%s", scope, ip)
+            error = "รหัสไม่ถูกต้อง"
     return render_template("unlock.html", error=error, next=request.values.get("next", ""), scope=scope)
 
 
@@ -210,10 +284,6 @@ def lock():
     session.pop("unlocked", None)
     session.pop("settings_until", None)
     return redirect(url_for("dashboard"))
-
-
-#: รหัสผ่านหน้า /settings (ชื่อผู้ใช้อะไรก็ได้) — ไม่ตั้ง = เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์เอง
-SETTINGS_PASSWORD = os.getenv("SEPSIS_SETTINGS_PASSWORD", "")
 
 
 def _from_server_itself():
@@ -231,18 +301,12 @@ def _settings_guard():
 
     คืน Response เมื่อไม่อนุญาต, None เมื่อผ่าน
     """
-    if VIEW_PASSWORD_HASH:
-        pass                    # ปลดล็อกด้วยรหัสดู HN/AN แล้ว (ตรวจใน settings())
-    elif SETTINGS_PASSWORD:
-        auth = request.authorization
-        if not (auth and auth.password
-                and hmac.compare_digest(auth.password.encode(), SETTINGS_PASSWORD.encode())):
-            return Response("ต้องใส่รหัสผ่านหน้าตั้งค่า (SEPSIS_SETTINGS_PASSWORD ใน .env)", 401,
-                            {"WWW-Authenticate": 'Basic realm="Sepsis Bundle settings", charset="UTF-8"'},
-                            mimetype="text/plain")
+    if settings_password_set():
+        pass                    # กรอกรหัสหน้าตั้งค่าแล้ว (ตรวจใน settings())
     elif not _from_server_itself():
         return Response("หน้าตั้งค่าเปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์ (http://127.0.0.1:<พอร์ต>/settings)\n"
-                        "ถ้าต้องการเปิดจากเครื่องอื่น ให้ตั้ง SEPSIS_SETTINGS_PASSWORD ใน .env แล้วรีสตาร์ตแอป",
+                        "ถ้าต้องการเปิดจากเครื่องอื่น ให้ตั้ง SEPSIS_SETTINGS_PASSWORD_HASH ใน .env แล้วรีสตาร์ตแอป\n"
+                        "(ใช้รหัสคนละตัวกับรหัสดู HN/AN)",
                         403, mimetype="text/plain")
     # กันเว็บอื่นแอบส่งฟอร์มมาแทนผู้ใช้ (เบราว์เซอร์แนบรหัสผ่านที่จำไว้ให้เอง)
     if request.method == "POST":
@@ -254,7 +318,7 @@ def _settings_guard():
 
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
-    if VIEW_PASSWORD_HASH and not settings_unlocked():  # ถามรหัส (ตัวเดียวกับดู HN/AN) ทุกครั้งที่เข้า
+    if settings_password_set() and not settings_unlocked():  # ถามรหัสหน้าตั้งค่าทุกครั้งที่เข้า
         return redirect(url_for("unlock", scope="settings", next=url_for("settings")))
     denied = _settings_guard()
     if denied:

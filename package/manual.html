@@ -280,10 +280,8 @@ cd C:\sepsis_bundle; .venv\Scripts\python.exe setup_check.py</pre>
     <li>เชิญบัญชี LINE <b>"หมอพร้อม"</b> เข้ากลุ่ม</li>
     <li>Admin หน่วยบริการเข้า CMS MOPH Notify แล้ว<b>อนุมัติกลุ่ม</b></li>
     <li>ดู <b>Client_ID</b> และ <b>Secret</b> ของกลุ่มในเมนูกลุ่มบอท</li>
-    <li>เปิด <code>http://&lt;IP เครื่อง&gt;:5800/settings</code> (หรือปุ่ม "⚙️ ตั้งค่าแจ้งเตือน" บนแดชบอร์ด) แล้วกรอกรหัส —
-        ถ้าตั้งรหัสดู HN/AN ไว้ (หัวข้อ 9) ใช้<b>รหัสเดียวกัน</b> ระบบถามทุกครั้งที่เข้าหน้านี้ ·
-        ถ้าไม่ได้ตั้ง ใช้รหัสผ่าน <code>SEPSIS_SETTINGS_PASSWORD</code> จาก <code>.env</code>
-        (ชื่อผู้ใช้อะไรก็ได้ · Linux: <code>install.sh</code> สร้างให้ · ถ้าไม่ตั้งทั้งสองค่า เปิดได้เฉพาะบนเครื่องเซิร์ฟเวอร์ที่ <code>http://127.0.0.1:5800/settings</code>)
+    <li>เปิด <code>http://&lt;IP เครื่อง&gt;:5800/settings</code> (หรือปุ่ม "⚙️ ตั้งค่าแจ้งเตือน" บนแดชบอร์ด) กรอกรหัสหน้าตั้งค่า <code>SEPSIS_SETTINGS_PASSWORD</code> (หรือ <code>SEPSIS_SETTINGS_PASSWORD_HASH</code>) จาก <code>.env</code>
+        (คนละรหัสกับรหัสดู HN/AN · Linux: <code>install.sh</code> สร้างให้ · ถ้าไม่ตั้ง เปิดได้เฉพาะบนเครื่องเซิร์ฟเวอร์ที่ <code>http://127.0.0.1:5800/settings</code>)
         กรอก Client Key และ Secret Key แล้วกด <b>บันทึก + ทดสอบส่ง</b></li>
   </ol>
   <p>ถ้าสำเร็จ กลุ่ม LINE จะได้การ์ดทดสอบ 2 ใบ (ข้อมูลสมมติ) ค่าที่บันทึกเก็บใน <code>data/moph_settings.json</code> ไม่ต้อง restart</p>
@@ -336,7 +334,7 @@ cd C:\sepsis_bundle; .venv\Scripts\python.exe setup_check.py</pre>
     <li>เห็นเลขจริงบนเบราว์เซอร์เครื่องนั้นจนครบ <code>SEPSIS_UNLOCK_HOURS</code> ชั่วโมง (ค่าเริ่มต้น 8) — เครื่องอื่นยังเห็น <code>xxx</code></li>
     <li>เลิกใช้หรือจะลุกจากเครื่อง กด <b>"🔓 ซ่อน HN/AN"</b> เพื่อซ่อนกลับทันที</li>
   </ol>
-  <p><b>หน้าตั้งค่าแจ้งเตือนใช้รหัสเดียวกัน</b> แต่ถามใหม่ทุกครั้งที่เข้า (กรอกแล้วใช้ได้ 10 นาที และล็อกเองเมื่อกลับหน้าแดชบอร์ด)
+  <p><b>หน้าตั้งค่าแจ้งเตือนใช้รหัสของตัวเอง</b> (<code>SEPSIS_SETTINGS_PASSWORD_HASH</code> — คนละรหัสกับรหัสดู HN/AN) และถามใหม่ทุกครั้งที่เข้า (กรอกแล้วใช้ได้ 10 นาที และล็อกเองเมื่อกลับหน้าแดชบอร์ด)
      · การปลดดู HN/AN ไม่ได้เปิดหน้าตั้งค่าให้ และการกรอกรหัสเข้าหน้าตั้งค่าไม่ได้ปลดดู HN/AN · กรอกรหัสผิดระบบหน่วง 1 วินาทีต่อครั้ง</p>
   <p><b>ตั้งรหัส (ผู้ดูแลระบบ)</b> — ระบบเก็บเฉพาะ hash ของรหัส ไม่เก็บรหัสจริงในไฟล์ใด สร้าง hash และกุญแจ session ด้วยคำสั่ง
      (Windows ใช้ <code>C:\sepsis_bundle\.venv\Scripts\python.exe</code> แทน):</p>
@@ -509,10 +507,10 @@ python install_alert.py rollback --host &lt;IP ฐานหลัก&gt; --user 
     <tr><td><code>SEPSIS_ER_DCH_REFER</code> / <code>_DEATH</code> / <code>_REFUSE</code> / <code>_ESCAPE</code> / <code>_HOME</code></td><td>2 / 4,6 / 7 / 8 / 1</td><td>รหัส er_dch_type ของแต่ละสถานะจำหน่าย</td></tr>
     <tr><td><code>LINE_CHANNEL_ACCESS_TOKEN</code> / <code>LINE_TO</code></td><td>–</td><td>ทางเลือกแทน MOPH Notify</td></tr>
     <tr><td><code>SEPSIS_KIPS_NOTES</code></td><td>1</td><td>1 = อ่านบันทึกพยาบาลหอผู้ป่วยจาก KIPS เพิ่ม (ถ้ามีตาราง) · 0 = ไม่อ่าน</td></tr>
-    <tr><td><code>SEPSIS_VIEW_PASSWORD_HASH</code></td><td>(ว่าง)</td><td>hash ของรหัสดู HN/AN และเข้าหน้าตั้งค่า (หัวข้อ 9) · ว่าง = แสดง HN/AN ตามปกติ</td></tr>
-    <tr><td><code>SEPSIS_SECRET_KEY</code></td><td>(สุ่มทุกครั้งที่เปิด)</td><td>กุญแจ session ของการปลดล็อก ควรตั้งเป็นค่าสุ่มคงที่</td></tr>
+    <tr><td><code>SEPSIS_VIEW_PASSWORD_HASH</code></td><td>(ว่าง)</td><td>hash ของรหัสดู HN/AN (หัวข้อ 9) · ว่าง = แสดง HN/AN ตามปกติ</td></tr>
+    <tr><td><code>SEPSIS_SECRET_KEY</code></td><td>(สุ่มครั้งแรกแล้วเก็บที่ <code>data/secret_key</code>)</td><td>กุญแจ session ของการปลดล็อก · ถ้าตั้งเองต้องยาว ≥ 32 ตัวอักษร</td></tr>
     <tr><td><code>SEPSIS_UNLOCK_HOURS</code></td><td>8</td><td>ปลดดู HN/AN แล้วเห็นได้กี่ชั่วโมงต่อเบราว์เซอร์</td></tr>
-    <tr><td><code>SEPSIS_SETTINGS_PASSWORD</code></td><td>(install.sh สร้าง)</td><td>รหัสหน้าตั้งค่า ใช้เมื่อไม่ได้ตั้ง <code>SEPSIS_VIEW_PASSWORD_HASH</code></td></tr>
+    <tr><td><code>SEPSIS_SETTINGS_PASSWORD_HASH</code> / <code>SEPSIS_SETTINGS_PASSWORD</code></td><td>(install.sh สร้าง)</td><td>รหัสหน้าตั้งค่า (คนละรหัสกับรหัสดู HN/AN) · ไม่ตั้ง = เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์ · ผิด 5 ครั้งพัก 15 นาที</td></tr>
   </table>
 </section>
 
@@ -522,9 +520,9 @@ python install_alert.py rollback --host &lt;IP ฐานหลัก&gt; --user 
   <div class="box danger"><b>ห้ามเปิดแดชบอร์ดออกอินเทอร์เน็ต</b> — หน้าเว็บแสดงข้อมูลผู้ป่วย (ICD10/บันทึกพยาบาล และ HN/AN เมื่อปลดล็อก) และ<b>ไม่มีระบบล็อกอินรายบุคคล</b>
      ใช้เฉพาะในวง LAN ของโรงพยาบาล ห้ามทำ port forward หรือ reverse proxy ออกภายนอก</div>
   <ul>
-    <li><b>ตั้งรหัสดู HN/AN</b> (หัวข้อ 9) ให้แดชบอร์ดซ่อนเลขระบุตัวผู้ป่วยเป็นค่าเริ่มต้น และใช้รหัสเดียวกันล็อกหน้าตั้งค่า</li>
-    <li>หน้า <code>/settings</code> ต้องใส่รหัส (รหัสดู HN/AN หรือ <code>SEPSIS_SETTINGS_PASSWORD</code> · ไม่ตั้งทั้งคู่ = เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์) และรับ URL ของ MOPH Notify
-        เฉพาะ <code>https://*.moph.go.th</code> — ถ้าวง LAN กว้าง ควรจำกัด IP ที่เข้าพอร์ต 5800 ได้ด้วย firewall
+    <li><b>ตั้งรหัสดู HN/AN</b> (หัวข้อ 9) ให้แดชบอร์ดซ่อนเลขระบุตัวผู้ป่วยเป็นค่าเริ่มต้น</li>
+    <li>หน้า <code>/settings</code> ต้องกรอกรหัสหน้าตั้งค่าทุกครั้ง (คนละรหัสกับรหัสดู HN/AN · ไม่ตั้ง = เปิดได้เฉพาะจากเครื่องเซิร์ฟเวอร์) · กรอกรหัสผิด 5 ครั้งพัก 15 นาที และรับ URL ของ MOPH Notify
+        เฉพาะ <code>https://*.moph.go.th</code> — ส่วนแดชบอร์ดยังไม่มีล็อกอิน ถ้าวง LAN กว้าง ควรจำกัด IP ที่เข้าพอร์ต 5800 ได้ด้วย firewall
         เช่น <code>firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=192.168.10.0/24 port port=5800 protocol=tcp accept'</code></li>
     <li>ใช้ user ฐานข้อมูลแบบ SELECT อย่างเดียว · ไฟล์ <code>.env</code> และ <code>data/</code> จำกัดสิทธิ์ให้เฉพาะระบบอ่านได้ — ห้ามส่งไฟล์เหล่านี้ให้ผู้อื่น</li>
     <li>ข้อความแจ้งเตือนไม่มีชื่อผู้ป่วยและไม่มี HN/AN จริง (เป็น <code>xxx</code>) แต่ยังมีหอผู้ป่วย/เตียง/ICD10 — ตั้งกลุ่ม LINE เป็นกลุ่มปิดเฉพาะบุคลากรที่เกี่ยวข้อง และทบทวนสมาชิกเป็นระยะ</li>
