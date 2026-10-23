@@ -68,6 +68,14 @@ def _to_dt(hm, tz):
     return dt
 
 
+def _before(hm, written_at):
+    """เวลาในบันทึกที่เขียนเมื่อ written_at — เป็นเหตุการณ์ก่อนเขียน เช่นเขียน 00:20 ว่าให้ยา 23.40 = เมื่อวาน"""
+    dt = datetime.combine(written_at.date(), datetime.min.time()).replace(hour=hm[0], minute=hm[1])
+    if dt > written_at + timedelta(hours=1):
+        dt -= timedelta(days=1)
+    return dt
+
+
 CLIP_STOP = re.compile(r"\s(?:V/S|แพทย์|อธิบาย|>>)")
 
 
@@ -94,20 +102,23 @@ def _vasopressor_agent(word):
     return "Adrenaline"
 
 
-def parse(text, tz, fluid_hours=3):
+def parse(text, tz, fluid_hours=3, written_at=None):
     """คืน dict ของสิ่งที่พบในบันทึก: แต่ละรายการมี dt (หรือ None) + snippet ข้อความต้นทาง
+
+    written_at — เวลาที่เขียนบันทึก (บันทึกหอผู้ป่วย KIPS): อ่านเวลาในข้อความย้อนจากเวลานี้แทนการนับจาก tz
 
     เพิ่มเติม: vasopressor (+agent), fluid_bolus_ml (load ภายใน fluid_hours ชม.), fluid_types
     ({"saline","balanced"}), min_sbp (BP ต่ำสุดที่บันทึก), first_spo2
     """
     text = re.sub(r"\s+", " ", text or "")
     found = {}
+    resolve = (lambda hm: _before(hm, written_at)) if written_at else (lambda hm: _to_dt(hm, tz))
 
     def record(key, segment, m, need_iv=False):
         if need_iv and not IV_ROUTE.search(segment):
             return
         hm = _time_for(segment, m.start())
-        dt = _to_dt(hm, tz) if hm else None
+        dt = resolve(hm) if hm else None
         cur = found.get(key)
         # เก็บเวลาที่เร็วที่สุด; รายการมีเวลาชนะรายการไม่มีเวลา
         if cur is None or (dt and (cur["dt"] is None or dt < cur["dt"])):
@@ -133,7 +144,7 @@ def parse(text, tz, fluid_hours=3):
         lm = LOAD_VOL.search(segment)
         if lm:
             hm = _time_for(segment, lm.start())
-            if hm is None or _to_dt(hm, tz) <= fluid_end:
+            if hm is None or resolve(hm) <= fluid_end:
                 tm = TOTAL_VOL.search(segment)
                 if tm:
                     total = max(total, _ml(tm.group(1)))

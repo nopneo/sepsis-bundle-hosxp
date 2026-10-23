@@ -386,10 +386,17 @@ def _num_or_none(v, lo=None, hi=None):
     return x
 
 
-def _oxygen_element(notes, tz, lo, hi):
+def _oxygen_element(notes, tz, lo, hi, kips=None):
     """Sepsis Six: ให้ O2 ให้ SpO2 > 94% — ถ้า SpO2 แรกปกติและไม่ได้ให้ O2 ถือว่าไม่จำเป็น (ผ่าน)"""
     base = {"label": "ออกซิเจน (SpO2 target)", "at": None, "elapsed_min": None, "source": None, "detail": None}
     o2, spo2 = notes.get("oxygen"), notes.get("first_spo2")
+    k = (kips or {}).get("oxygen")
+    if not o2 and k:
+        base.update(compliant=True, source="พยาบาลบันทึกให้ O2 (KIPS หอผู้ป่วย)", detail=k["snippet"],
+                    note="บันทึกว่าให้ O2" + _kips_when(k))
+        if k["timed"]:
+            base.update(at=k["dt"].strftime("%Y-%m-%d %H:%M"), elapsed_min=round((k["dt"] - tz).total_seconds() / 60))
+        return base
     if o2:
         base.update(compliant=True, source="พยาบาลบันทึกให้ O2 (ER)", detail=o2["snippet"],
                     note="บันทึกว่าให้ O2" + ("" if o2["dt"] else " (ไม่ระบุเวลา)"))
@@ -407,12 +414,16 @@ def _oxygen_element(notes, tz, lo, hi):
     return base
 
 
-def _urine_element(notes):
+def _urine_element(notes, kips=None):
     base = {"label": "ติดตาม Urine Output", "at": None, "elapsed_min": None, "source": None, "detail": None}
     u = notes.get("urine_output")
+    k = (kips or {}).get("urine_output")
     if u:
         base.update(compliant=True, source="พยาบาลบันทึก (ER)", detail=u["snippet"],
                     note="บันทึกการคาสายสวน/ติดตามปัสสาวะ")
+    elif k:
+        base.update(compliant=True, source="พยาบาลบันทึก (KIPS หอผู้ป่วย)", detail=k["snippet"],
+                    note="บันทึกการคาสายสวน/ติดตามปัสสาวะ" + _kips_when(k))
     else:
         base.update(compliant=None, note="ไม่พบบันทึก — ต้องให้พยาบาลยืนยันเอง")
     return base
@@ -428,6 +439,63 @@ def _nurse_text(vn):
 
 
 NURSE_SOURCE = "พยาบาลบันทึกเวลาให้ (ER)"
+
+# บันทึกพยาบาลหอผู้ป่วยจาก KIPS (IPD paperless) — ส่วนใหญ่เป็นแผนการพยาบาลรายเวร เช่น "ให้ยา Cef-3 2 gm v OD"
+# ที่ไม่ระบุเวลาให้ จึงใช้เวลาที่เขียนในข้อความก่อน ถ้าไม่มีใช้เวลาบันทึก (= ให้แล้วไม่ช้ากว่านี้) · 0 = ปิด
+KIPS_NOTES = os.getenv("SEPSIS_KIPS_NOTES", "1").strip() != "0"
+KIPS_KEYS = ("antibiotic", "iv_fluid", "oxygen", "urine_output")
+KIPS_TIMED_SOURCE = "พยาบาลบันทึกเวลาให้ (KIPS หอผู้ป่วย)"
+KIPS_RECORDED_SOURCE = "พยาบาลบันทึกใน KIPS (ใช้เวลาบันทึก)"
+KIPS_LATE_HOURS = 12   # บันทึกที่เขียนหลังช่วงค้นหาไม่เกินนี้ อาจย้อนเล่าเวลาที่อยู่ในช่วง
+
+
+def _kips_written(d, t):
+    """เวลาบันทึก KIPS — บางแถวเก็บปีเป็น พ.ศ. ในช่อง date"""
+    dt = _to_dt(d, t)
+    return dt.replace(year=dt.year - 543) if dt and dt.year > 2400 else dt
+
+
+def _kips_notes(an, tz, lo, hi):
+    """{key: {dt, snippet, timed}} ที่เร็วที่สุดของแต่ละรายการใน KIPS_KEYS ภายในช่วง lo-hi
+
+    timed=True: เวลาที่พยาบาลเขียนในข้อความ · False: ไม่ระบุเวลา dt คือเวลาบันทึก
+    """
+    if not (KIPS_NOTES and an and _has("kips_ipd_nurse_focus_list") and _has("kips_ipd_nurse_focus_detail")):
+        return {}
+    # ไม่กรองวันใน SQL เพราะบางแถวเก็บปี พ.ศ. — บันทึกต่อ AN มีไม่กี่สิบแถว
+    rows = fetch("""
+        select d.record_date, d.record_time,
+               replace(replace(concat_ws(char(10), d.assessment, d.intervention, d.evaluation),
+                               char(13), ''), char(10), ' - ') txt
+        from kips_ipd_nurse_focus_list f
+        join kips_ipd_nurse_focus_detail d on d.kips_ipd_nurse_focus_list_id = f.kips_ipd_nurse_focus_list_id
+        where f.an = %(an)s
+    """, {"an": an})
+    found = {}
+    for r in rows:
+        written = _kips_written(r.get("record_date"), r.get("record_time"))
+        if written is None or not lo <= written <= hi + timedelta(hours=KIPS_LATE_HOURS):
+            continue
+        notes = nurse_notes.parse(r.get("txt") or "", tz, written_at=written)
+        for key in KIPS_KEYS:
+            n = notes.get(key)
+            if not n:
+                continue
+            if n["dt"]:
+                if not lo <= n["dt"] <= hi:
+                    continue
+                cand = {"dt": n["dt"], "snippet": n["snippet"], "timed": True}
+            elif written <= hi:
+                cand = {"dt": written, "snippet": n["snippet"], "timed": False}
+            else:
+                continue
+            if key not in found or cand["dt"] < found[key]["dt"]:
+                found[key] = cand
+    return found
+
+
+def _kips_when(k):
+    return "" if k["timed"] else f" (ไม่ระบุเวลา · บันทึก KIPS {k['dt'].strftime('%H:%M')})"
 
 
 # ----------------------------------------------- 2b. ตัวชี้วัดตาม SSC 2026
@@ -638,17 +706,26 @@ def bundle_status(case):
     text = _nurse_text(case["vn"])
     notes = nurse_notes.parse(text, tz, fluid_hours=FLUID_HOURS)
     notes["_has_text"] = bool(text.strip())
+    kips = _kips_notes(case.get("an"), tz, lo, hi)
 
     def documented(key):
-        """เวลาให้จริงจากบันทึกพยาบาล (ถ้ามีและอยู่ในช่วงค้นหา) — ใช้ก่อนเวลาสั่ง"""
-        n = notes.get(key)
+        """เวลาให้จริงที่พยาบาลเขียน (ER หรือ KIPS หอผู้ป่วย ภายในช่วงค้นหา) — ใช้ก่อนเวลาสั่ง"""
+        cands = []
+        n, k = notes.get(key), kips.get(key)
         if n and n["dt"] and lo <= n["dt"] <= hi:
-            return n["dt"], NURSE_SOURCE, n["snippet"]
-        return None
+            cands.append((n["dt"], NURSE_SOURCE, n["snippet"]))
+        if k and k["timed"]:
+            cands.append((k["dt"], KIPS_TIMED_SOURCE, k["snippet"]))
+        return min(cands, key=lambda c: c[0]) if cands else None
 
     def prefer_documented(key, ordered):
         doc = documented(key)
-        return doc if doc else (ordered[0], ordered[1], None)
+        if doc:
+            return doc
+        k = kips.get(key)   # บันทึก KIPS ไม่ระบุเวลา ใช้เมื่อเร็วกว่าเวลาสั่ง (หรือไม่พบคำสั่ง)
+        if k and (ordered[0] is None or k["dt"] < ordered[0]):
+            return k["dt"], KIPS_RECORDED_SOURCE, k["snippet"]
+        return ordered[0], ordered[1], None
 
     lactate = _lab_event(case["hn"], LACTATE_LAB_ITEMS, start, end) + (None,)
     culture = _earliest([
@@ -676,8 +753,8 @@ def bundle_status(case):
         "culture": elem("เพาะเชื้อก่อนให้ยา (Hemoculture)", culture),
         "antibiotic": elem("ยาปฏิชีวนะ (Antibiotic)", atb),
         "iv_fluid": elem("สารน้ำ IV Fluid", fluid),
-        "oxygen": _oxygen_element(notes, tz, lo, hi),
-        "urine_output": _urine_element(notes),
+        "oxygen": _oxygen_element(notes, tz, lo, hi, kips),
+        "urine_output": _urine_element(notes, kips),
     }
 
     culture_before_antibiotic = None
@@ -701,8 +778,8 @@ def bundle_status(case):
         "news2_hosxp": bool(ssc["news2"] and ssc["news2"]["source"] == "HOSxP"),
         "recognition_time": bool(_to_dt_single(case.get("sepsis_recognition_datetime"))),
         "triage_time": bool(_to_dt_single(case.get("triage_datetime"))),
-        "nurse_atb_time": elements["antibiotic"]["source"] == NURSE_SOURCE,
-        "nurse_fluid_time": elements["iv_fluid"]["source"] == NURSE_SOURCE,
+        "nurse_atb_time": elements["antibiotic"]["source"] in (NURSE_SOURCE, KIPS_TIMED_SOURCE),
+        "nurse_fluid_time": elements["iv_fluid"]["source"] in (NURSE_SOURCE, KIPS_TIMED_SOURCE),
         "lactate_value": ssc["lactate"]["value"] is not None,
     }
     return {
