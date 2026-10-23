@@ -2,11 +2,15 @@
 // {{ER_DEPS_SQL}} / {{ER_DEPS_TEXT}} = รหัสแผนก ER ของโรงพยาบาล
 // MEWS_SQL = นิพจน์ MEWS, MEWS_GT = เตือน MEWS แยกเมื่อคะแนนมากกว่าค่านี้ (ตัวติดตั้งแทนค่าให้)
 // SPO2_SQL = นิพจน์ SpO2, SPO2_LT = เตือน SpO2 แยกเมื่อต่ำกว่าค่านี้
+// QSOFA_SQL / QSOFA_KNOWN_SQL = นิพจน์ qSOFA (แสดงประกอบในหน้าต่าง Sepsis)
 var
 fmews : string;
 fsepsis : string;
 fspo2 : string;
 fshown : string;
+fqsofa : string;
+fqsofak : string;
+fqtext : string;
 fvn : string;
 fhn : string;
 fptname : string;
@@ -47,6 +51,8 @@ ffever := '0';
 fmews := '0';
 fsepsis := '0';
 fspo2 := '0';
+fqsofa := '0';
+fqtext := '';
 crlf := chr(13) + chr(10);
 //showmessage(fptname);
 if fage > 14 then
@@ -84,6 +90,20 @@ fspo2 := getsqldata('select {{SPO2_SQL}} as spo2 '+
 if fspo2 > 0 then
 begin
   fvital := fvital + '   SpO2 ' + fspo2 + '%';
+end;
+// --- เพิ่ม: qSOFA = RR >= 22, SBP <= 100, สติเปลี่ยน (AVPU/GCS ถ้ามี) - ข้อมูลประกอบในหน้าต่าง Sepsis ไม่ใช้สั่งเตือน ---
+fqsofa := getsqldata('select {{QSOFA_SQL}} as q '+
+'from opdscreen o where o.vn="'+fvn+'" ');
+fqsofak := getsqldata('select {{QSOFA_KNOWN_SQL}} as k '+
+'from opdscreen o where o.vn="'+fvn+'" ');
+fqtext := 'qSOFA ' + fqsofa + '/3';
+if fqsofa > 1 then
+begin
+  fqtext := fqtext + ' เสี่ยงสูง';
+end;
+if fqsofak = '0' then
+begin
+  fqtext := fqtext + ' (ไม่มีข้อมูลสติ)';
 end;
 // เวลาเป้าหมายฝั่ง ER = เวลาบันทึก + 60 นาที (date_format คืนข้อความ HH:MM)
 fdue := getsqldata('select date_format(now() + interval 60 minute, "%H:%i")');
@@ -174,7 +194,7 @@ begin
       lbVital.Font.Name := 'Tahoma';
       lbVital.Font.Height := -18;
       lbVital.Font.Color := 4605510;
-      lbVital.Caption := fvital;
+      lbVital.Caption := fvital + '   ' + fqtext;
 
       lbTodo := TLabel.Create(frm);
       lbTodo.Parent := pnRed;
@@ -275,7 +295,7 @@ begin
       lbVital.Font.Name := 'Tahoma';
       lbVital.Font.Height := -18;
       lbVital.Font.Color := 4605510;
-      lbVital.Caption := fvital;
+      lbVital.Caption := fvital + '   ' + fqtext;
 
       lbDue := TLabel.Create(frm);
       lbDue.Parent := pnRed;

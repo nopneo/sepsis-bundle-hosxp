@@ -83,8 +83,48 @@ def spo2_sql(cols=None):
 
 SPO2_SQL = spo2_sql()
 
+# qSOFA (Sepsis-3) — แสดงประกอบในหน้าต่าง Sepsis เท่านั้น ไม่ใช้สั่งเตือน (SSC: ไม่ใช้ qSOFA คัดกรองเดี่ยว)
+# สติเปลี่ยน = AVPU V/P/U ในหน้าซักประวัติ หรือ GCS < 15 ที่ ER (er_nursing_detail) — นับเฉพาะค่าในช่วงที่ถูกต้อง
+_GCS_VALID = ("d.vn = o.vn and d.gcs_e between 1 and 4 and d.gcs_v between 1 and 5 "
+              "and d.gcs_m between 1 and 6")
 
-def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=None):
+
+def _gcs_text(text_cols):
+    """GCS ที่พยาบาลพิมพ์ใน HPI/PE เช่น "E4V5M6", "E3VTM5" (ต.ค. 2026: พบ ~14% ของ visit มากกว่าช่อง GCS ราว 5 เท่า)"""
+    cols = ", ".join(f"o.{c}" for c in SPO2_TEXT_COLS if c in text_cols)
+    return f'regexp_substr(lower(concat_ws(" ", {cols})), "e ?[1-4] ?v ?[1-5t] ?m ?[1-6]")' if cols else ""
+
+
+def _mentation(avpu, er_gcs, altered, text_cols=()):
+    conds = []
+    if avpu:
+        conds.append(f"o.consciousness_level_type_id in ({'2, 3, 4' if altered else '1, 2, 3, 4'})")
+    if er_gcs:
+        extra = " and d.gcs_e + d.gcs_v + d.gcs_m < 15" if altered else ""
+        conds.append(f"exists(select 1 from er_nursing_detail d where {_GCS_VALID}{extra})")
+    g = _gcs_text(text_cols)
+    if g:   # ค่าแรกที่พิมพ์ ไม่ใช่ E4V5M6 = GCS < 15 (รวม VT ใส่ท่อช่วยหายใจ)
+        conds.append(f'({g} <> "" and {g} not regexp "e ?4 ?v ?5 ?m ?6")' if altered else f'{g} <> ""')
+    return " or ".join(conds)
+
+
+def qsofa_sql(avpu, er_gcs, text_cols=()):
+    """คะแนน qSOFA 0-3 ต่อ 1 แถว opdscreen (alias o): RR >= 22, SBP <= 100, สติเปลี่ยน"""
+    parts = ["(case when o.rr >= 22 then 1 else 0 end)",
+             "(case when o.bps > 50 and o.bps <= 100 then 1 else 0 end)"]
+    m = _mentation(avpu, er_gcs, True, text_cols)
+    if m:
+        parts.append(f"(case when {m} then 1 else 0 end)")
+    return " + ".join(parts)
+
+
+def qsofa_known_sql(avpu, er_gcs, text_cols=()):
+    """1 = มีข้อมูลสติให้ประเมินข้อ 3 ของ qSOFA · 0 = ไม่มี (คะแนนอาจต่ำกว่าจริง)"""
+    m = _mentation(avpu, er_gcs, False, text_cols)
+    return f"(case when {m} then 1 else 0 end)" if m else "0"
+
+
+def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=None, er_gcs=False):
     codes = [c.strip() for c in er_deps.split(",") if c.strip()]
     if not codes or not all(re.fullmatch(r"[0-9A-Za-z]{1,6}", c) for c in codes):
         sys.exit("--er-deps ต้องเป็นรหัสแผนก คั่นด้วยจุลภาค เช่น 011 หรือ 011,012")
@@ -101,6 +141,9 @@ def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=Non
         sys.exit("--spo2-alert ต้องเป็น 0-100 (0 = ไม่เตือน SpO2 แยก)")
     text = text.replace("{{SPO2_SQL}}", spo2_sql(spo2_cols))
     text = text.replace("{{SPO2_LT}}", str(spo2_alert))
+    text_cols = set(spo2_cols) if spo2_cols is not None else set(SPO2_TEXT_COLS)
+    text = text.replace("{{QSOFA_SQL}}", qsofa_sql(avpu, er_gcs, text_cols))
+    text = text.replace("{{QSOFA_KNOWN_SQL}}", qsofa_known_sql(avpu, er_gcs, text_cols))
     text.encode("tis-620")          # ฐาน HOSxP ส่วนใหญ่เก็บ tis620 — อักษรนอกชุดนี้บันทึกไม่ได้
     return text.replace("\r\n", "\n").replace("\n", "\r\n")
 
@@ -198,9 +241,13 @@ def cmd_check(args):
     c.close()
 
 
-def opdscreen_cols(cur):
+def table_cols(cur, table):
     return {r[0].lower() for r in q(cur, "select column_name from information_schema.columns "
-                                         "where table_schema = database() and table_name = 'opdscreen'")}
+                                         "where table_schema = database() and table_name = %s", (table,))}
+
+
+def opdscreen_cols(cur):
+    return table_cols(cur, "opdscreen")
 
 
 def has_avpu(cur):
@@ -231,8 +278,13 @@ def cmd_install(args):
     cur = c.cursor()
     cols = opdscreen_cols(cur)
     avpu = "consciousness_level_type_id" in cols
+    er_gcs = {"gcs_e", "gcs_v", "gcs_m"} <= table_cols(cur, "er_nursing_detail")
     new = build_script(args.er_deps, avpu=avpu, mews_alert=args.mews_alert,
-                       spo2_alert=args.spo2_alert, spo2_cols=cols)
+                       spo2_alert=args.spo2_alert, spo2_cols=cols, er_gcs=er_gcs)
+    print("qSOFA: แสดงในหน้าต่าง Sepsis · ข้อสติใช้ "
+          + (" + ".join(n for n, ok in (("AVPU", avpu), ("GCS ที่ ER", er_gcs),
+                                        ("GCS ในข้อความ HPI/PE", bool(_gcs_text(cols)))) if ok)
+             or "(ไม่มีข้อมูล นับ 2 ข้อ)"))
     print(f"SpO2: อ่านจาก {', '.join(c for c in ('o2sat', *SPO2_TEXT_COLS) if c in cols) or '(ไม่มีช่อง)'} · "
           + (f"เตือนแยกเมื่อ SpO2 < {args.spo2_alert}%" if args.spo2_alert else "ไม่เตือนแยก"))
     print(f"MEWS: {'รวม AVPU' if avpu else 'ไม่มีช่อง AVPU คิด 4 ค่า'} · "

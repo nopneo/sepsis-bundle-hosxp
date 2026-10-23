@@ -92,3 +92,52 @@ def test_build_script_spo2():
     assert "'" not in install_alert.SPO2_SQL
     off = install_alert.build_script("011", avpu=False, mews_alert=5, spo2_alert=0)
     assert "if fspo2 < 0 then" in off                    # 0 = ไม่เตือน SpO2 แยก (ไม่มีค่าใดต่ำกว่า 0)
+
+
+def qsofa(rr=None, bps=None, consc=None, gcs=None, avpu=True, er_gcs=True):
+    """คำนวณ qSOFA ด้วยนิพจน์ SQL ตัวเดียวกับที่ใส่ใน script (รันบน sqlite) — คืน (คะแนน, ประเมินสติได้ไหม)"""
+    db = sqlite3.connect(":memory:")
+    db.execute("create table opdscreen (vn, rr, bps, consciousness_level_type_id)")
+    db.execute("create table er_nursing_detail (vn, gcs_e, gcs_v, gcs_m)")
+    db.execute("insert into opdscreen values ('1', ?, ?, ?)", (rr, bps, consc))
+    if gcs:
+        db.execute("insert into er_nursing_detail values ('1', ?, ?, ?)", gcs)
+    score = db.execute(f"select {install_alert.qsofa_sql(avpu, er_gcs)} from opdscreen o").fetchone()[0]
+    known = db.execute(f"select {install_alert.qsofa_known_sql(avpu, er_gcs)} from opdscreen o").fetchone()[0]
+    return score, known
+
+
+@pytest.mark.parametrize("kw,expected", [
+    (dict(rr=20, bps=120), (0, 0)),
+    (dict(rr=22, bps=120), (1, 0)),                       # RR >= 22
+    (dict(rr=22, bps=100), (2, 0)),                       # SBP <= 100
+    (dict(rr=22, bps=0), (1, 0)),                         # BP 0 = ไม่ได้วัด ไม่นับ
+    (dict(rr=None, bps=None), (0, 0)),
+    (dict(rr=24, bps=90, consc=2), (3, 1)),               # AVPU = V
+    (dict(rr=18, bps=120, consc=1), (0, 1)),              # AVPU = A ประเมินแล้ว ปกติ
+    (dict(rr=24, bps=90, gcs=(3, 4, 6)), (3, 1)),         # GCS 13 < 15
+    (dict(rr=24, bps=90, gcs=(4, 5, 6)), (2, 1)),         # GCS 15 ปกติ
+    (dict(rr=24, bps=90, gcs=(98, 5, 6)), (2, 0)),        # ค่าผิด (E 98) ไม่นับ
+])
+def test_qsofa(kw, expected):
+    assert qsofa(**kw) == expected
+
+
+def test_qsofa_without_consciousness_columns():
+    assert qsofa(rr=24, bps=90, consc=3, gcs=(1, 1, 1), avpu=False, er_gcs=False) == (2, 0)
+
+
+def test_build_script_shows_qsofa_in_sepsis_window():
+    text = install_alert.build_script("011", avpu=True, mews_alert=5, er_gcs=True)
+    assert "er_nursing_detail" in text and "qSOFA" in text
+    assert "'" not in install_alert.qsofa_sql(True, True) + install_alert.qsofa_known_sql(True, True)
+    old = install_alert.build_script("011", avpu=False, mews_alert=5, er_gcs=False)
+    assert "er_nursing_detail" not in old and "consciousness_level_type_id" not in old
+
+
+def test_build_script_reads_gcs_from_text():
+    """GCS ส่วนใหญ่พิมพ์ใน HPI/PE เช่น E4V5M6 — script ต้องอ่านจากข้อความด้วย และไม่อ้างคอลัมน์ที่ไม่มี"""
+    text = install_alert.build_script("011", er_gcs=False, spo2_cols={"hpi", "pe"})
+    assert "e ?[1-4] ?v ?[1-5t] ?m ?[1-6]" in text and "o.hpi, o.pe" in text and "o.note" not in text
+    none = install_alert.build_script("011", er_gcs=False, spo2_cols=set())
+    assert "e ?[1-4]" not in none
