@@ -6,6 +6,8 @@
 // SIRS_SQL / SIRS_WBC_SQL = นิพจน์ SIRS 0-4 และมีผล WBC แล้วหรือไม่ (แสดงประกอบในหน้าต่าง Sepsis)
 var
 fmews : string;
+fnews : string;
+fews : string;
 fsepsis : string;
 fspo2 : string;
 fshown : string;
@@ -57,6 +59,7 @@ fage := getsqldata('select age_y from vn_stat where vn="'+fvn+'" ');
 fptname := '';
 ffever := '0';
 fmews := '0';
+fnews := '0';
 fsepsis := '0';
 fspo2 := '0';
 fqsofa := '0';
@@ -113,6 +116,10 @@ if fspo2 > 0 then
 begin
   fvital := fvital + '   SpO2 ' + fspo2 + '%';
 end;
+// --- เพิ่ม: NEWS2 (RCP 2017, SpO2 scale 1, ให้ O2 +2 จากข้อความ, สติเปลี่ยน 3) คำนวณจาก SpO2 ชุดเดียวกัน ---
+fnews := getsqldata('select concat({{NEWS2_SQL}}) + 0 as news2 '+
+'from (select o.*, {{SPO2_SQL}} sp from opdscreen o where o.vn="'+fvn+'") o ');
+fvital := fvital + '   NEWS2 ' + fnews;
 // --- เพิ่ม: qSOFA = RR >= 22, SBP <= 100, สติเปลี่ยน (AVPU/GCS ถ้ามี) - ข้อมูลประกอบในหน้าต่าง Sepsis ไม่ใช้สั่งเตือน ---
 fqsofa := getsqldata('select concat({{QSOFA_SQL}}) + 0 as q '+
 'from opdscreen o where o.vn="'+fvn+'" ');
@@ -396,13 +403,22 @@ begin
   end;
 end;
 
-// --- เพิ่ม: ไม่เข้าเกณฑ์สงสัย Sepsis แต่ MEWS สูง / SpO2 ต่ำ = เสี่ยงทรุดลง (แสดงแทนข้อความ SOS เดิม) ---
+// --- เพิ่ม: ไม่เข้าเกณฑ์สงสัย Sepsis แต่ NEWS2/MEWS สูง หรือ SpO2 ต่ำ = เสี่ยงทรุดลง (แสดงแทนข้อความ SOS เดิม) ---
 if fsepsis = '0' then
 begin
   fshown := '0';
+  fews := '0';
   if fmews > {{MEWS_GT}} then
   begin
-    showmessage ('MEWS = ' + fmews + ' : เสี่ยงสูง (High risk)' + crlf +
+    fews := '1';
+  end;
+  if fnews > {{NEWS2_GT}} then
+  begin
+    fews := '1';
+  end;
+  if fews = '1' then
+  begin
+    showmessage ('NEWS2 = ' + fnews + '   MEWS = ' + fmews + ' : เสี่ยงสูง (High risk)' + crlf +
                  'แจ้งแพทย์ประเมิน / พิจารณาแจ้งทีมช่วยเหลือ' + crlf +
                  'วัดสัญญาณชีพถี่ขึ้น' + crlf + crlf +
                  'SOS Score = ' + fptname + '   ' + fvital);
@@ -416,7 +432,7 @@ begin
       begin
         showmessage ('SpO2 = ' + fspo2 + '% : ต่ำ' + crlf +
                      'ให้ออกซิเจนตามแนวทาง / แจ้งแพทย์ประเมิน' + crlf + crlf +
-                     'MEWS = ' + fmews + '   SOS Score = ' + fptname + crlf + fvital);
+                     'NEWS2 = ' + fnews + '   MEWS = ' + fmews + '   SOS Score = ' + fptname + crlf + fvital);
         fshown := '1';
       end;
     end;

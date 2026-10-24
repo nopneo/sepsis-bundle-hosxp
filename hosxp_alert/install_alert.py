@@ -1,7 +1,7 @@
 """ตัวติดตั้งหน้าต่างเตือน "สงสัย Sepsis" ในหน้าซักประวัติ HOSxP (SYS_VN_SCRIPT)
 
     python install_alert.py check    --host <ip> [--db hos] --user <user>
-    python install_alert.py install  --host <ip> [--db hos] --user <user> --er-deps 011[,012] [--mews-alert 5]
+    python install_alert.py install  --host <ip> [--db hos] --user <user> --er-deps 011[,012] [--mews-alert 5] [--news2-alert 5]
     python install_alert.py rollback --host <ip> [--db hos] --user <user> --backup backups/<ไฟล์>.pas
     python install_alert.py wizard   [--wizard-port 8787]
 
@@ -220,8 +220,37 @@ PROBE_LINE = ("showmessage('PROBE ' + Screen.ActiveForm.Name + ' / ' + Screen.Ac
               "' / ' + Screen.ActiveForm.ClassName);")
 
 
+# NEWS2 (Royal College of Physicians 2017) — SpO2 scale 1 · ให้ O2 = +2 · สติเปลี่ยน (CVPU) = 3
+# ใช้คอลัมน์ sp (SpO2 จาก spo2_sql) ของตารางย่อย o · ช่องว่าง/ค่าผิดได้ 0
+NEWS2_PARTS = [
+    "(case when o.rr is null or o.rr <= 2 then 0 when o.rr <= 8 then 3 when o.rr <= 11 then 1 "
+    "when o.rr <= 20 then 0 when o.rr <= 24 then 2 else 3 end)",
+    "(case when o.sp is null or o.sp = 0 then 0 when o.sp <= 91 then 3 when o.sp <= 93 then 2 "
+    "when o.sp <= 95 then 1 else 0 end)",
+    "(case when o.bps is null or o.bps <= 50 then 0 when o.bps <= 90 then 3 when o.bps <= 100 then 2 "
+    "when o.bps <= 110 then 1 when o.bps < 220 then 0 else 3 end)",
+    "(case when o.pulse is null or o.pulse <= 20 then 0 when o.pulse <= 40 then 3 when o.pulse <= 50 then 1 "
+    "when o.pulse <= 90 then 0 when o.pulse <= 110 then 1 when o.pulse <= 130 then 2 else 3 end)",
+    "(case when o.temperature is null or o.temperature <= 20 then 0 when o.temperature <= 35 then 3 "
+    "when o.temperature <= 36 then 1 when o.temperature <= 38 then 0 when o.temperature <= 39 then 1 else 2 end)",
+]
+# ให้ออกซิเจนตามข้อความพยาบาล เช่น "On O2 cannula 3 LPM", "O2 mask c bag" (ห้ามใช้ ? และ { })
+O2_REGEX = "(on *o2|o2 *(canu|cannu|mask|nasal)|nasal *cann|mask *c *bag|hfnc|high *flow)"
+
+
+def news2_sql(avpu, er_gcs, text_cols=()):
+    parts = list(NEWS2_PARTS)
+    cols = ", ".join(f"o.{c}" for c in SPO2_TEXT_COLS if c in text_cols)
+    if cols:
+        parts.append(f'(case when lower(concat_ws(" ", {cols})) regexp "{O2_REGEX}" then 2 else 0 end)')
+    m = _mentation(avpu, er_gcs, True, text_cols)
+    if m:
+        parts.append(f"(case when {m} then 3 else 0 end)")
+    return " + ".join(parts)
+
+
 def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=None, er_gcs=False,
-                 wbc_items="", band_items="", probe=False, skip_forms=None):
+                 wbc_items="", band_items="", probe=False, skip_forms=None, news2_alert=5):
     codes = [c.strip() for c in er_deps.split(",") if c.strip()]
     if not codes or not all(re.fullmatch(r"[0-9A-Za-z]{1,6}", c) for c in codes):
         sys.exit("--er-deps ต้องเป็นรหัสแผนก คั่นด้วยจุลภาค เช่น 011 หรือ 011,012")
@@ -241,6 +270,10 @@ def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=Non
     text_cols = set(spo2_cols) if spo2_cols is not None else set(MENT_TEXT_COLS)
     text = text.replace("{{QSOFA_SQL}}", qsofa_sql(avpu, er_gcs, text_cols))
     text = text.replace("{{QSOFA_KNOWN_SQL}}", qsofa_known_sql(avpu, er_gcs, text_cols))
+    if not 0 <= news2_alert <= 20:
+        sys.exit("--news2-alert ต้องเป็น 0-20 (0 = ไม่เตือน NEWS2 แยก)")
+    text = text.replace("{{NEWS2_SQL}}", news2_sql(avpu, er_gcs, text_cols))
+    text = text.replace("{{NEWS2_GT}}", str(news2_alert - 1 if news2_alert else 98))
     text = text.replace("{{SIRS_SQL}}", sirs_sql(wbc_items, band_items))
     text = text.replace("{{SIRS_WBC_SQL}}", sirs_wbc_known_sql(wbc_items))
     forms = [f.strip() for f in (SKIP_FORMS if skip_forms is None else skip_forms).split(",") if f.strip()]
@@ -461,6 +494,10 @@ def install_summary_lines(args, cols, avpu, er_gcs):
     lines.append(f"MEWS: {'รวม AVPU' if avpu else 'ไม่มีช่อง AVPU คิด 4 ค่า'} · "
           + (f"เตือนแยกเมื่อ MEWS >= {args.mews_alert}" if args.mews_alert
              else "ไม่เตือนแยก (แสดงในหน้าต่าง Sepsis เท่านั้น)"))
+    news2_alert = getattr(args, "news2_alert", 5)
+    lines.append("NEWS2: SpO2 scale 1 + ให้ O2 จากข้อความ · "
+          + (f"เตือนแยกเมื่อ NEWS2 >= {news2_alert}" if news2_alert
+             else "ไม่เตือนแยก (แสดงในบรรทัดสัญญาณชีพเท่านั้น)"))
     return lines
 
 
@@ -473,7 +510,7 @@ def cmd_install(args):
     new = build_script(args.er_deps, avpu=avpu, mews_alert=args.mews_alert,
                        spo2_alert=args.spo2_alert, spo2_cols=cols, er_gcs=er_gcs,
                        wbc_items=args.wbc_items, band_items=args.band_items, probe=args.probe,
-                       skip_forms=args.skip_forms)
+                       skip_forms=args.skip_forms, news2_alert=args.news2_alert)
     if args.probe:
         print("!! ฉบับทดสอบ (--probe): ขึ้นข้อความ PROBE ทุกครั้งที่ script ทำงาน")
     for line in install_summary_lines(args, cols, avpu, er_gcs):
@@ -657,6 +694,7 @@ script ปัจจุบัน: {_esc(k)}</p>
 
 <details><summary>ตั้งค่าขั้นสูง (ปรับได้ ไม่บังคับ)</summary>
   <label>เตือนแยกเมื่อ MEWS >= <input type="number" name="mews_alert" value="{_esc(picked.get('mews_alert', 5))}"></label>
+  <label>เตือนแยกเมื่อ NEWS2 >= <input type="number" name="news2_alert" value="{_esc(picked.get('news2_alert', 5))}"></label>
   <label>เตือนแยกเมื่อ SpO2 ต่ำกว่า (%) <input type="number" name="spo2_alert" value="{_esc(picked.get('spo2_alert', 92))}"></label>
   <label>ชื่อหน้าต่าง HOSxP ที่ไม่ต้องเตือน (คั่นด้วยจุลภาค)
     <input type="text" name="skip_forms" value="{_esc(picked.get('skip_forms', SKIP_FORMS))}"></label>
@@ -689,6 +727,7 @@ def _preview_page(args, lines, k, already_same, warn_replace, stats):
         "".join(hid("wbc_items", c) for c in args.wbc_items.split(",") if c),
         "".join(hid("band_items", c) for c in args.band_items.split(",") if c),
         hid("mews_alert", args.mews_alert), hid("spo2_alert", args.spo2_alert),
+        hid("news2_alert", args.news2_alert),
         hid("skip_forms", args.skip_forms), hid("replace", "1" if args.replace else ""),
     ])
     body = f"""
@@ -718,6 +757,7 @@ def _build_wizard_args(form):
         host=w["host"], port=w["port"], db=w["db"], user=w["user"],
         er_deps=",".join(form.get("er_deps", [])),
         mews_alert=_int(form, "mews_alert", 5),
+        news2_alert=_int(form, "news2_alert", 5),
         spo2_alert=_int(form, "spo2_alert", 92),
         wbc_items=",".join(form.get("wbc_items", [])),
         band_items=",".join(form.get("band_items", [])),
@@ -786,7 +826,7 @@ class WizardHandler(BaseHTTPRequestHandler):
         args = _build_wizard_args(form)
         picked = dict(er_deps=form.get("er_deps", []), wbc_items=form.get("wbc_items", []),
                      band_items=form.get("band_items", []), mews_alert=args.mews_alert,
-                     spo2_alert=args.spo2_alert, skip_forms=args.skip_forms, replace=args.replace)
+                     news2_alert=args.news2_alert, spo2_alert=args.spo2_alert, skip_forms=args.skip_forms, replace=args.replace)
         cols = opdscreen_cols(cur)
         avpu = "consciousness_level_type_id" in cols
         er_gcs = {"gcs_e", "gcs_v", "gcs_m"} <= table_cols(cur, "er_nursing_detail")
@@ -794,7 +834,7 @@ class WizardHandler(BaseHTTPRequestHandler):
             new_script = build_script(args.er_deps, avpu=avpu, mews_alert=args.mews_alert,
                                       spo2_alert=args.spo2_alert, spo2_cols=cols, er_gcs=er_gcs,
                                       wbc_items=args.wbc_items, band_items=args.band_items,
-                                      skip_forms=args.skip_forms)
+                                      skip_forms=args.skip_forms, news2_alert=args.news2_alert)
         except SystemExit as exc:
             self._send(_select_page(cur, _WIZ, error=str(exc.code), picked=picked))
             return
@@ -865,6 +905,7 @@ def main():
     ap.add_argument("--wizard-port", type=int, default=8787, help="พอร์ตสำหรับเปิดวิซาร์ดในเบราว์เซอร์ (ค่าเริ่มต้น 8787)")
     ap.add_argument("--er-deps", help="รหัสแผนก ER (opdscreen.screen_dep) เช่น 011 หรือ 011,012")
     ap.add_argument("--mews-alert", type=int, default=5, help="เตือนแยกเมื่อ MEWS >= ค่านี้ (0 = ไม่เตือน)")
+    ap.add_argument("--news2-alert", type=int, default=5, help="เตือนแยกเมื่อ NEWS2 >= ค่านี้ (0 = ไม่เตือน)")
     ap.add_argument("--spo2-alert", type=int, default=92, help="เตือนแยกเมื่อ SpO2 ต่ำกว่าค่านี้ (0 = ไม่เตือน)")
     ap.add_argument("--wbc-items", default="", help="รหัส lab_items_code ของ WBC สำหรับ SIRS เช่น 35 (ดูจากคำสั่ง check)")
     ap.add_argument("--band-items", default="", help="รหัส lab_items_code ของ Band %% สำหรับ SIRS เช่น 2015")
