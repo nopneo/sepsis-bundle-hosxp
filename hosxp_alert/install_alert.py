@@ -237,6 +237,10 @@ NEWS2_PARTS = [
 # ให้ออกซิเจนตามข้อความพยาบาล เช่น "On O2 cannula 3 LPM", "O2 mask c bag" (ห้ามใช้ ? และ { })
 O2_REGEX = "(on *o2|o2 *(canu|cannu|mask|nasal)|nasal *cann|mask *c *bag|hfnc|high *flow)"
 
+# Shock Index = ชีพจร / SBP · >= 1.0 (ชีพจร >= SBP) = สูง · ค่าว่าง/ผิดได้ 0 · คืน "1"/"0" แบบ fwhere
+SI_SQL = "(case when bps > 50 and pulse > 20 then round(pulse / bps, 2) else 0 end)"
+SI_HIGH_SQL = '(case when bps > 50 and pulse > 20 and pulse >= bps then "1" else "0" end)'
+
 
 def news2_sql(avpu, er_gcs, text_cols=()):
     parts = list(NEWS2_PARTS)
@@ -273,6 +277,7 @@ def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=Non
     if not 0 <= news2_alert <= 20:
         sys.exit("--news2-alert ต้องเป็น 0-20 (0 = ไม่เตือน NEWS2 แยก)")
     text = text.replace("{{NEWS2_SQL}}", news2_sql(avpu, er_gcs, text_cols))
+    text = text.replace("{{SI_SQL}}", SI_SQL).replace("{{SI_HIGH_SQL}}", SI_HIGH_SQL)
     text = text.replace("{{NEWS2_GT}}", str(news2_alert - 1 if news2_alert else 98))
     text = text.replace("{{SIRS_SQL}}", sirs_sql(wbc_items, band_items))
     text = text.replace("{{SIRS_WBC_SQL}}", sirs_wbc_known_sql(wbc_items))
