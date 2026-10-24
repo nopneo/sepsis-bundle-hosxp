@@ -350,3 +350,10 @@ def test_build_script_news2():
     assert "on *o2" in text                                 # ให้ออกซิเจน (+2) อ่านจากข้อความ
     off = install_alert.build_script("011", news2_alert=0)
     assert "if fnews > 98 then" in off
+
+
+def test_news2_big_on_sos_row():
+    """NEWS2 ตัวใหญ่แถวเดียวกับ SOS Score ต่อจาก T ทั้งหน้าต่างแดงและ ER (ผู้ใช้ขอ 24 ต.ค. 2026) ไม่ซ้ำในบรรทัดสัญญาณชีพ"""
+    text = install_alert.build_script("011", avpu=True, er_gcs=True)
+    assert text.count("lbScore.Caption := 'SOS Score = ' + fptname + '     T ' + ftemp + ' C     NEWS2 = ' + fnews;") == 2
+    assert "'   NEWS2 ' + fnews" not in text

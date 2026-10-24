@@ -497,7 +497,7 @@ def install_summary_lines(args, cols, avpu, er_gcs):
     news2_alert = getattr(args, "news2_alert", 5)
     lines.append("NEWS2: SpO2 scale 1 + ให้ O2 จากข้อความ · "
           + (f"เตือนแยกเมื่อ NEWS2 >= {news2_alert}" if news2_alert
-             else "ไม่เตือนแยก (แสดงในบรรทัดสัญญาณชีพเท่านั้น)"))
+             else "ไม่เตือนแยก (แสดงในหน้าต่าง Sepsis เท่านั้น)"))
     return lines
 
 
