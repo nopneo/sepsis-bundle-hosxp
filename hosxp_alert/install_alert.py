@@ -237,6 +237,10 @@ NEWS2_PARTS = [
 # ให้ออกซิเจนตามข้อความพยาบาล เช่น "On O2 cannula 3 LPM", "O2 mask c bag" (ห้ามใช้ ? และ { })
 O2_REGEX = "(on *o2|o2 *(canu|cannu|mask|nasal)|nasal *cann|mask *c *bag|hfnc|high *flow)"
 
+# Shock Index = ชีพจร / SBP · >= 1.0 (ชีพจร >= SBP) = สูง · ค่าว่าง/ผิดได้ 0 · คืน "1"/"0" แบบ fwhere
+SI_SQL = "(case when bps > 50 and pulse > 20 then round(pulse / bps, 2) else 0 end)"
+SI_HIGH_SQL = '(case when bps > 50 and pulse > 20 and pulse >= bps then "1" else "0" end)'
+
 
 def news2_sql(avpu, er_gcs, text_cols=()):
     parts = list(NEWS2_PARTS)
@@ -273,6 +277,7 @@ def build_script(er_deps, avpu=False, mews_alert=5, spo2_alert=92, spo2_cols=Non
     if not 0 <= news2_alert <= 20:
         sys.exit("--news2-alert ต้องเป็น 0-20 (0 = ไม่เตือน NEWS2 แยก)")
     text = text.replace("{{NEWS2_SQL}}", news2_sql(avpu, er_gcs, text_cols))
+    text = text.replace("{{SI_SQL}}", SI_SQL).replace("{{SI_HIGH_SQL}}", SI_HIGH_SQL)
     text = text.replace("{{NEWS2_GT}}", str(news2_alert - 1 if news2_alert else 98))
     text = text.replace("{{SIRS_SQL}}", sirs_sql(wbc_items, band_items))
     text = text.replace("{{SIRS_WBC_SQL}}", sirs_wbc_known_sql(wbc_items))
@@ -377,6 +382,54 @@ def fetch_er_dep_candidates(cur):
             join opdscreen s on s.vn = e.vn left join kskdepartment k on k.depcode = s.screen_dep
             where e.vstdate >= curdate() - interval 30 day and s.bps > 0
             group by s.screen_dep, k.department order by n desc limit 6""")
+
+
+ER_NAME = re.compile(r"\ber\b|ฉุกเฉิน|อุบัติเหตุ|emergency", re.I)
+SCREEN_NAME = re.compile(r"ซักประวัติ|คัดกรอง|opd|ari|ผู้ป่วยนอก|คลินิก|หัตถการ", re.I)
+
+
+def recommend_er_deps(rows):
+    """แผนก ER ที่ควรติ๊ก: ชื่อเป็นห้องฉุกเฉิน ถ้าไม่มีใช้แผนกที่มี visit ER มากที่สุด
+    (แผนกจุดซักประวัติ OPD/ARI ที่มี visit ER ด้วย = ผู้ป่วยคัดกรองที่ OPD แล้วส่ง ER — ต้องได้หน้าต่างแดง ไม่ใช่ ER)"""
+    by_name = {dep for dep, name, _ in rows if dep and ER_NAME.search(name or "") and not SCREEN_NAME.search(name or "")}
+    if by_name:
+        return by_name
+    top = max(rows, key=lambda r: r[2], default=None)
+    return {top[0]} if top and top[0] else set()
+
+
+def er_dep_warnings(er_deps, names):
+    """เตือนเมื่อติ๊กแผนกที่ชื่อเหมือนจุดซักประวัติ — จุดนั้นจะได้หน้าต่าง ER แทนหน้าต่างแดง "ส่ง ER ทันที\""""
+    return [f"{d} {names.get(d, '')} ดูเหมือนจุดซักประวัติ/OPD — ถ้าติ๊ก จุดนี้จะได้หน้าต่าง ER แทนหน้าต่างแดง \"ส่ง ER ทันที\""
+            for d in er_deps if SCREEN_NAME.search(names.get(d, "") or "") and not ER_NAME.search(names.get(d, "") or "")]
+
+
+def fetch_allow_deps(cur):
+    """รายการแผนกที่ HOSxP ยอมรัน VN script (depcode_vn_script_allow) — None = ไม่มีตารางนี้"""
+    if not q(cur, "select 1 from information_schema.tables where table_schema = database() "
+                  "and table_name = %s", ("depcode_vn_script_allow",)):
+        return None
+    return {r[0] for r in q(cur, "select depcode from depcode_vn_script_allow") if r[0]}
+
+
+def add_allow_deps(cur, deps):
+    """เพิ่มแผนก ER ที่ยังไม่อยู่ใน depcode_vn_script_allow (เพิ่มอย่างเดียว ไม่ลบของเดิม) — คืนรายการที่เพิ่ม"""
+    have = fetch_allow_deps(cur)
+    if have is None:
+        return []
+    added = [d for d in deps if d and d not in have]
+    for d in added:
+        cur.execute("insert into depcode_vn_script_allow (depcode) values (%s)", (d,))
+    return added
+
+
+def target_banner(host, db):
+    """กล่องบอกฐานที่จะเขียน — ฐานที่ชื่อไม่มีคำว่า test ถือเป็นฐานจริง (HOSxP ทุกเครื่องใช้ทันทีหลังเปิดใหม่)"""
+    where = f"{_esc(host)} / {_esc(db)}"
+    if re.search(r"test|tst|dev|demo", db or "", re.I):
+        return f'<div class="warn"><b>ฐานทดสอบ: {where}</b></div>'
+    return (f'<div class="err"><b>ฐานจริง: {where}</b> — HOSxP ทุกเครื่องที่ต่อฐานนี้จะใช้ script ใหม่ทันทีหลังเปิดโปรแกรมใหม่ '
+            "ติดตั้งช่วงคนน้อย และลองผู้ป่วยจริง 1 รายทันทีหลังติดตั้ง</div>")
 
 
 def fetch_lab_item_candidates(cur):
@@ -519,6 +572,12 @@ def cmd_install(args):
     k = kind(row[1] if row else None)
     print(f"script ปัจจุบัน: {k}")
     if row and row[1].replace("\r\n", "\n") == new.replace("\r\n", "\n"):
+        if getattr(args, "add_allow", False):   # script ตรงแล้ว แต่ยังเพิ่มแผนก ER ใน depcode_vn_script_allow ได้
+            confirm(args, "เพิ่มแผนก ER ใน depcode_vn_script_allow")
+            added = add_allow_deps(cur, [d for d in args.er_deps.split(",") if d])
+            c.commit()
+            sys.exit(f"script ฉบับนี้ติดตั้งอยู่แล้ว · เพิ่มแผนก {', '.join(added)} ใน depcode_vn_script_allow แล้ว"
+                     if added else "script ฉบับนี้ติดตั้งอยู่แล้ว และแผนก ER อยู่ใน depcode_vn_script_allow แล้ว")
         sys.exit("ฉบับนี้ติดตั้งอยู่แล้ว — ไม่ต้องทำอะไร")
     if k.startswith("script อื่น") and not args.replace:
         sys.exit("!! script เดิมของ รพ. ไม่ใช่แบบที่ระบบนี้รู้จัก — ติดตั้งจะลบการทำงานเดิมทั้งหมด\n"
@@ -536,7 +595,12 @@ def cmd_install(args):
     if n != 1:
         c.rollback()
         sys.exit(f"!! เขียนได้ {n} แถว (ต้องเป็น 1) — script อาจถูกแก้ระหว่างนี้ ยกเลิก")
+    er_deps = [d for d in args.er_deps.split(",") if d]
+    added = add_allow_deps(cur, er_deps) if getattr(args, "add_allow", False) else []
     c.commit()
+    if added:
+        print(f"เพิ่มแผนก {', '.join(added)} ใน depcode_vn_script_allow แล้ว · ย้อนกลับ: "
+              f"delete from depcode_vn_script_allow where depcode in ({', '.join(repr(d) for d in added)})")
     after = current(cur)
     ok = after and after[1].replace("\r\n", "\n") == new.replace("\r\n", "\n")
     print("ติดตั้งแล้ว — อ่านกลับตรงกับต้นฉบับ" if ok else "!! อ่านกลับไม่ตรง — ให้ rollback ทันที")
@@ -648,18 +712,42 @@ def _connect_page(error=None, host="", port=3306, db="hos", user=""):
 
 def _select_page(cur, conn_info, error=None, picked=None):
     picked = picked or {}
-    er_sel = set(picked.get("er_deps", []))
+    deps = fetch_er_dep_candidates(cur)
+    recommended = recommend_er_deps(deps)
+    er_sel = set(picked["er_deps"]) if "er_deps" in picked else recommended
     wbc_sel = set(picked.get("wbc_items", []))
     band_sel = set(picked.get("band_items", []))
+    allow = fetch_allow_deps(cur)
 
     row = current(cur)
     k = kind(row[1] if row else None)
 
+    def role(dep, name):
+        if dep in recommended:
+            return "<b>ห้องฉุกเฉิน — แนะนำให้ติ๊ก</b>"
+        if SCREEN_NAME.search(name or ""):
+            return "จุดซักประวัติ/OPD — ไม่ต้องติ๊ก (ได้หน้าต่างแดง)"
+        return "ไม่ต้องติ๊ก ถ้าไม่ใช่ห้องฉุกเฉิน"
+
+    def allowed(dep):
+        if allow is None or not allow:
+            return "-"
+        return "รันได้" if dep in allow else '<span style="color:#b42318">ไม่อยู่ในรายการ</span>'
+
     dep_rows = "".join(
         f'<tr><td><input type="checkbox" name="er_deps" value="{_esc(dep)}"'
         f'{" checked" if dep in er_sel else ""}></td>'
-        f'<td>{_esc(dep or "(ว่าง)")}</td><td>{_esc(name or "")}</td><td>{n}</td></tr>'
-        for dep, name, n in fetch_er_dep_candidates(cur))
+        f'<td>{_esc(dep or "(ว่าง)")}</td><td>{_esc(name or "")}</td><td>{n}</td>'
+        f'<td>{role(dep, name)}</td><td>{allowed(dep)}</td></tr>'
+        for dep, name, n in deps)
+    missing = sorted(d for d in recommended if allow and d not in allow)
+    allow_html = ""
+    if missing:
+        allow_html = (
+            f'<div class="warn">แผนก ER ({_esc(", ".join(missing))}) ยังไม่อยู่ในตาราง <code>depcode_vn_script_allow</code> '
+            "— HOSxP อาจไม่รัน script เมื่อบันทึกจากแผนกนี้ (ไม่ขึ้นแม้ข้อความ SOS)"
+            f'<label><input type="checkbox" name="add_allow" value="1"{"" if picked.get("add_allow") is False else " checked"}>'
+            " เพิ่มแผนก ER ที่ติ๊กเข้ารายการนี้ตอนติดตั้ง (เพิ่มอย่างเดียว ไม่ลบแผนกเดิม)</label></div>")
     if not dep_rows:
         dep_rows = ('<tr><td colspan="4">ไม่พบ visit ER ใน 30 วันหลัง — ใส่รหัสแผนกเองไม่ได้ในหน้านี้ '
                    "ใช้ CLI --er-deps แทน</td></tr>")
@@ -682,10 +770,20 @@ def _select_page(cur, conn_info, error=None, picked=None):
 script ปัจจุบัน: {_esc(k)}</p>
 {err_html}
 <form method="post" action="/preview">
-<h2>แผนก ER (opdscreen.screen_dep) — ติ๊กได้มากกว่า 1 ข้อ</h2>
-<table><tr><th></th><th>รหัสแผนก</th><th>ชื่อแผนก</th><th>visit ER 30 วัน</th></tr>
+<h2>แผนกห้องฉุกเฉิน (ER) — ปกติติ๊กแผนกเดียว</h2>
+<div class="warn" style="background:#eef4ff;border-color:#b8cdf5;color:#1f3a6b">
+หน้าต่างเตือนมี <b>2 แบบ</b> แยกตาม<b>แผนกที่ผู้ใช้ล็อกอินตอนบันทึกซักประวัติ</b>:
+<ul style="margin:8px 0 0 18px;padding:0">
+<li><b>แผนกที่ติ๊ก (ห้องฉุกเฉิน)</b> → หน้าต่างน้ำเงิน "SEPSIS ALERT (ER) : เริ่ม Bundle ทันที" + เวลาเป้าหมาย 1 ชม.</li>
+<li><b>แผนกอื่นทั้งหมด</b> (จุดซักประวัติ OPD, ARI, คลินิก) → หน้าต่างแดง "เตือนสงสัย SEPSIS : ส่ง ER ทันที"</li>
+</ul>
+ติ๊กเฉพาะแผนกห้องฉุกเฉินจริงที่พยาบาล ER ล็อกอิน — <b>อย่าติ๊กจุดซักประวัติ OPD</b> แม้จะมี visit ER ในตาราง
+(คือผู้ป่วยที่คัดกรองที่ OPD แล้วส่งไป ER ซึ่งจุดนั้นต้องได้หน้าต่างแดง)
+</div>
+<table><tr><th></th><th>รหัสแผนก</th><th>ชื่อแผนก</th><th>visit ER 30 วัน</th><th>คำแนะนำ</th><th>HOSxP รัน script</th></tr>
 {dep_rows}
 </table>
+{allow_html}
 
 <h2>รหัส lab สำหรับ SIRS (WBC / Band %) — ไม่บังคับเลือก</h2>
 <table><tr><th>รหัส</th><th>ชื่อ lab</th><th>หน่วย</th><th>WBC</th><th>Band</th></tr>
@@ -708,12 +806,21 @@ script ปัจจุบัน: {_esc(k)}</p>
     return _wiz_page("เลือกค่าตั้งค่า", body)
 
 
-def _preview_page(args, lines, k, already_same, warn_replace, stats):
+def _preview_page(args, lines, k, already_same, warn_replace, stats, dep_names=None):
+    dep_names = dep_names or {}
+    er_deps = [d for d in args.er_deps.split(",") if d]
+    er_list = ", ".join(f"{d} {dep_names.get(d, '')}".strip() for d in er_deps)
+    dep_warn = "".join(f'<div class="warn">{_esc(w)}</div>' for w in er_dep_warnings(er_deps, dep_names))
+    allow_line = ('<p class="hint">จะเพิ่มแผนก ER ที่ยังไม่อยู่ใน depcode_vn_script_allow ให้ด้วย</p>'
+                  if getattr(args, "add_allow", False) else "")
     lines_html = "\n".join(_esc(ln) for ln in lines)
     stat_line = (f"ประมาณการจากข้อมูล 90 วัน: สงสัย Sepsis ~{stats['est'] / 90:.1f} ครั้ง/วัน · "
                 f"MEWS >= 5 ~{stats['ge5'] / 90:.1f} ครั้ง/วัน")
     warn_html = ""
-    if already_same:
+    if already_same and getattr(args, "add_allow", False):
+        warn_html = ('<div class="warn">script ฉบับนี้ติดตั้งอยู่แล้ว — กดยืนยันจะเพิ่มแผนก ER ใน '
+                     'depcode_vn_script_allow อย่างเดียว ไม่เปลี่ยน script</div>')
+    elif already_same:
         warn_html = '<div class="warn">script ฉบับนี้ติดตั้งอยู่แล้ว — กดยืนยันจะไม่มีอะไรเปลี่ยน</div>'
     elif warn_replace:
         warn_html = ('<div class="warn">script เดิมของ รพ. ไม่ใช่แบบที่ระบบนี้รู้จัก — ถ้าตั้งใจแทนที่ทั้งหมด '
@@ -729,9 +836,14 @@ def _preview_page(args, lines, k, already_same, warn_replace, stats):
         hid("mews_alert", args.mews_alert), hid("spo2_alert", args.spo2_alert),
         hid("news2_alert", args.news2_alert),
         hid("skip_forms", args.skip_forms), hid("replace", "1" if args.replace else ""),
+        hid("add_allow", "1" if getattr(args, "add_allow", False) else ""),
     ])
     body = f"""
 <h1>ตรวจสอบก่อนติดตั้งจริง</h1>
+{target_banner(args.host, args.db)}
+<p><b>หน้าต่าง ER</b> (น้ำเงิน เริ่ม Bundle): แผนก {_esc(er_list or "-")} ·
+<b>หน้าต่างแดง</b> (ส่ง ER ทันที): แผนกอื่นทั้งหมด</p>
+{dep_warn}{allow_line}
 <p class="hint">script ปัจจุบัน: {_esc(k)} · {_esc(stat_line)}</p>
 <pre>{lines_html}</pre>
 {warn_html}
@@ -763,7 +875,7 @@ def _build_wizard_args(form):
         band_items=",".join(form.get("band_items", [])),
         backup=None, replace=bool(_first(form, "replace")), force=False,
         yes=True, skip_forms=_first(form, "skip_forms", SKIP_FORMS) or SKIP_FORMS,
-        probe=False)
+        probe=False, add_allow=bool(_first(form, "add_allow")))
 
 
 class WizardHandler(BaseHTTPRequestHandler):
@@ -826,7 +938,8 @@ class WizardHandler(BaseHTTPRequestHandler):
         args = _build_wizard_args(form)
         picked = dict(er_deps=form.get("er_deps", []), wbc_items=form.get("wbc_items", []),
                      band_items=form.get("band_items", []), mews_alert=args.mews_alert,
-                     news2_alert=args.news2_alert, spo2_alert=args.spo2_alert, skip_forms=args.skip_forms, replace=args.replace)
+                     news2_alert=args.news2_alert, spo2_alert=args.spo2_alert, skip_forms=args.skip_forms,
+                     replace=args.replace, add_allow=args.add_allow)
         cols = opdscreen_cols(cur)
         avpu = "consciousness_level_type_id" in cols
         er_gcs = {"gcs_e", "gcs_v", "gcs_m"} <= table_cols(cur, "er_nursing_detail")
@@ -844,7 +957,8 @@ class WizardHandler(BaseHTTPRequestHandler):
         warn_replace = k.startswith("script อื่น") and not args.replace
         lines = install_summary_lines(args, cols, avpu, er_gcs)
         stats = estimate_alerts(cur, avpu)
-        self._send(_preview_page(args, lines, k, already_same, warn_replace, stats))
+        names = {d: n or "" for d, n, _ in fetch_er_dep_candidates(cur)}
+        self._send(_preview_page(args, lines, k, already_same, warn_replace, stats, names))
 
     def _handle_install(self, form):
         if not _WIZ.get("conn"):
@@ -909,6 +1023,8 @@ def main():
     ap.add_argument("--spo2-alert", type=int, default=92, help="เตือนแยกเมื่อ SpO2 ต่ำกว่าค่านี้ (0 = ไม่เตือน)")
     ap.add_argument("--wbc-items", default="", help="รหัส lab_items_code ของ WBC สำหรับ SIRS เช่น 35 (ดูจากคำสั่ง check)")
     ap.add_argument("--band-items", default="", help="รหัส lab_items_code ของ Band %% สำหรับ SIRS เช่น 2015")
+    ap.add_argument("--add-allow", action="store_true",
+                    help="เพิ่มแผนก ER ที่ยังไม่อยู่ใน depcode_vn_script_allow (ไม่งั้น HOSxP ไม่รัน script ที่แผนกนั้น)")
     ap.add_argument("--backup", help="ไฟล์สำรองสำหรับ rollback")
     ap.add_argument("--replace", action="store_true", help="แทนที่ script อื่นของ รพ. ทั้งหมด")
     ap.add_argument("--force", action="store_true", help="rollback แม้ script ปัจจุบันไม่ใช่ของระบบนี้")

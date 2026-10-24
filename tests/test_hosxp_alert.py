@@ -357,3 +357,23 @@ def test_news2_big_on_sos_row():
     text = install_alert.build_script("011", avpu=True, er_gcs=True)
     assert text.count("lbScore.Caption := 'SOS Score = ' + fptname + '     T ' + ftemp + ' C     NEWS2 = ' + fnews;") == 2
     assert "'   NEWS2 ' + fnews" not in text
+
+
+def test_shock_index_in_vital_line():
+    """Shock Index = ชีพจร / SBP ในบรรทัดสัญญาณชีพ (ผู้ใช้ขอ 24 ต.ค. 2026) · สูงเมื่อ >= 1.0 = ชีพจร >= SBP
+    แถวตัวใหญ่กว้างไม่พอ (MEWS/qSOFA/SIRS/MAP + SI เกินกรอบ 840 px)"""
+    text = install_alert.build_script("011", avpu=True, er_gcs=True)
+    assert "round(pulse / bps, 2)" in text and "pulse >= bps" in text
+    assert "fvital := fvital + '   SI ' + fsi + ' สูง';" in text
+    assert text.count("fsi :=") == 1 and text.count("fsihigh :=") == 1
+
+
+def test_shock_index_sql_values():
+    db = sqlite3.connect(":memory:")
+    db.execute("create table opdscreen (vn, pulse, bps)")
+    rows = [("1", 140.0, 128.0), ("2", 80.0, 120.0), ("3", 0.0, 120.0), ("4", 120.0, 0.0)]   # HOSxP เก็บเป็น double
+    db.executemany("insert into opdscreen values (?, ?, ?)", rows)
+    si = dict(db.execute(f"select vn, {install_alert.SI_SQL} from opdscreen").fetchall())
+    hi = dict(db.execute(f"select vn, {install_alert.SI_HIGH_SQL} from opdscreen").fetchall())
+    assert si == {"1": 1.09, "2": 0.67, "3": 0, "4": 0}
+    assert hi == {"1": "1", "2": "0", "3": "0", "4": "0"}

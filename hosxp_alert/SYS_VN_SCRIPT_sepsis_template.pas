@@ -6,6 +6,8 @@
 // SIRS_SQL / SIRS_WBC_SQL = นิพจน์ SIRS 0-4 และมีผล WBC แล้วหรือไม่ (แสดงประกอบในหน้าต่าง Sepsis)
 var
 fmews : string;
+fsi : string;
+fsihigh : string;
 fnews : string;
 fews : string;
 fsepsis : string;
@@ -104,6 +106,20 @@ frr := getsqldata('select round(rr) from opdscreen where vn="'+fvn+'" ');
 fvital := 'BP ' + fbps;
 fvital := fvital + '/' + fbpd;
 fvital := fvital + '   P ' + fpulse + '   RR ' + frr;
+// --- เพิ่ม: Shock Index = ชีพจร / SBP (สูงเมื่อ >= 1.0) ต่อท้ายบรรทัดสัญญาณชีพ - แถวตัวใหญ่กว้างไม่พอ ---
+fsi := getsqldata('select concat({{SI_SQL}}) + 0 as si from opdscreen where vn="'+fvn+'" ');
+fsihigh := getsqldata('select {{SI_HIGH_SQL}} as sh from opdscreen where vn="'+fvn+'" ');
+if fsihigh = '1' then
+begin
+  fvital := fvital + '   SI ' + fsi + ' สูง';
+end
+else
+begin
+  if fsi > 0 then
+  begin
+    fvital := fvital + '   SI ' + fsi;
+  end;
+end;
 // getsqldata ที่คืนจำนวนเต็ม (เช่น age_y, ผลบวก case) แล้วนำไปต่อข้อความ = script หยุดเงียบ
 // จึงห่อเป็น concat(...) + 0 ให้ได้ทศนิยมแบบเดียวกับ SOS Score (fptname) ที่ใช้ได้จริง
 // --- เพิ่ม: MEWS (Modified Early Warning Score) คืนเป็นตัวเลขเดียว ช่องว่าง/ค่าผิดได้ 0 ---
