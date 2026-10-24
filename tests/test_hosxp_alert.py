@@ -304,3 +304,56 @@ def test_map(bps, bpd, expected):
     db.execute("insert into opdscreen values (?, ?)", (bps, bpd))
     assert float(db.execute(f"select {sql} from opdscreen").fetchone()[0]) == expected
     assert "if fmap < 65 then" in text and "'MAP = missing'" in text
+
+
+def news2(rr=None, sp=0, bps=None, pulse=None, temperature=None, consc=None):
+    """คำนวณ NEWS2 ด้วยนิพจน์ SQL ตัวเดียวกับที่ใส่ใน script (sqlite, ไม่มีคอลัมน์ข้อความ)"""
+    db = sqlite3.connect(":memory:")
+    db.execute("create table opdscreen (vn, rr, bps, pulse, temperature, consciousness_level_type_id)")
+    db.execute("create table er_nursing_detail (vn, gcs_e, gcs_v, gcs_m)")
+    db.execute("insert into opdscreen values ('1', ?, ?, ?, ?, ?)", (rr, bps, pulse, temperature, consc))
+    sql = f"select {install_alert.news2_sql(True, False)} from (select *, ? sp from opdscreen) o"
+    return db.execute(sql, (sp,)).fetchone()[0]
+
+
+NORMAL = dict(rr=16, sp=97, bps=120, pulse=80, temperature=37.0)
+
+
+@pytest.mark.parametrize("change,score", [
+    ({}, 0),
+    (dict(rr=8), 3), (dict(rr=9), 1), (dict(rr=11), 1), (dict(rr=21), 2), (dict(rr=24), 2), (dict(rr=25), 3),
+    (dict(sp=91), 3), (dict(sp=92), 2), (dict(sp=93), 2), (dict(sp=94), 1), (dict(sp=95), 1), (dict(sp=0), 0),
+    (dict(bps=90), 3), (dict(bps=91), 2), (dict(bps=100), 2), (dict(bps=105), 1), (dict(bps=219), 0),
+    (dict(bps=220), 3),
+    (dict(pulse=40), 3), (dict(pulse=45), 1), (dict(pulse=91), 1), (dict(pulse=111), 2), (dict(pulse=130), 2),
+    (dict(pulse=131), 3),
+    (dict(temperature=35.0), 3), (dict(temperature=35.5), 1), (dict(temperature=38.0), 0),
+    (dict(temperature=38.5), 1), (dict(temperature=39.1), 2),
+    (dict(consc=2), 3), (dict(consc=1), 0),
+])
+def test_news2_standard_table(change, score):
+    assert news2(**{**NORMAL, **change}) == score
+
+
+def test_news2_blank_values_score_zero():
+    assert news2() == 0
+    assert news2(rr=0, sp=0, bps=0, pulse=0, temperature=0) == 0
+
+
+def test_news2_sum():
+    assert news2(rr=22, sp=93, bps=95, pulse=115, temperature=39.2, consc=2) == 2 + 2 + 2 + 2 + 2 + 3
+
+
+def test_build_script_news2():
+    text = install_alert.build_script("011", avpu=True, er_gcs=True, news2_alert=5)
+    assert "fnews" in text and "NEWS2" in text and "if fnews > 4 then" in text
+    assert "on *o2" in text                                 # ให้ออกซิเจน (+2) อ่านจากข้อความ
+    off = install_alert.build_script("011", news2_alert=0)
+    assert "if fnews > 98 then" in off
+
+
+def test_news2_big_on_sos_row():
+    """NEWS2 ตัวใหญ่แถวเดียวกับ SOS Score ต่อจาก T ทั้งหน้าต่างแดงและ ER (ผู้ใช้ขอ 24 ต.ค. 2026) ไม่ซ้ำในบรรทัดสัญญาณชีพ"""
+    text = install_alert.build_script("011", avpu=True, er_gcs=True)
+    assert text.count("lbScore.Caption := 'SOS Score = ' + fptname + '     T ' + ftemp + ' C     NEWS2 = ' + fnews;") == 2
+    assert "'   NEWS2 ' + fnews" not in text
