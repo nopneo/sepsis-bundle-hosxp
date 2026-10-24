@@ -567,6 +567,12 @@ def cmd_install(args):
     k = kind(row[1] if row else None)
     print(f"script ปัจจุบัน: {k}")
     if row and row[1].replace("\r\n", "\n") == new.replace("\r\n", "\n"):
+        if getattr(args, "add_allow", False):   # script ตรงแล้ว แต่ยังเพิ่มแผนก ER ใน depcode_vn_script_allow ได้
+            confirm(args, "เพิ่มแผนก ER ใน depcode_vn_script_allow")
+            added = add_allow_deps(cur, [d for d in args.er_deps.split(",") if d])
+            c.commit()
+            sys.exit(f"script ฉบับนี้ติดตั้งอยู่แล้ว · เพิ่มแผนก {', '.join(added)} ใน depcode_vn_script_allow แล้ว"
+                     if added else "script ฉบับนี้ติดตั้งอยู่แล้ว และแผนก ER อยู่ใน depcode_vn_script_allow แล้ว")
         sys.exit("ฉบับนี้ติดตั้งอยู่แล้ว — ไม่ต้องทำอะไร")
     if k.startswith("script อื่น") and not args.replace:
         sys.exit("!! script เดิมของ รพ. ไม่ใช่แบบที่ระบบนี้รู้จัก — ติดตั้งจะลบการทำงานเดิมทั้งหมด\n"
@@ -806,7 +812,10 @@ def _preview_page(args, lines, k, already_same, warn_replace, stats, dep_names=N
     stat_line = (f"ประมาณการจากข้อมูล 90 วัน: สงสัย Sepsis ~{stats['est'] / 90:.1f} ครั้ง/วัน · "
                 f"MEWS >= 5 ~{stats['ge5'] / 90:.1f} ครั้ง/วัน")
     warn_html = ""
-    if already_same:
+    if already_same and getattr(args, "add_allow", False):
+        warn_html = ('<div class="warn">script ฉบับนี้ติดตั้งอยู่แล้ว — กดยืนยันจะเพิ่มแผนก ER ใน '
+                     'depcode_vn_script_allow อย่างเดียว ไม่เปลี่ยน script</div>')
+    elif already_same:
         warn_html = '<div class="warn">script ฉบับนี้ติดตั้งอยู่แล้ว — กดยืนยันจะไม่มีอะไรเปลี่ยน</div>'
     elif warn_replace:
         warn_html = ('<div class="warn">script เดิมของ รพ. ไม่ใช่แบบที่ระบบนี้รู้จัก — ถ้าตั้งใจแทนที่ทั้งหมด '

@@ -199,3 +199,19 @@ def test_preview_page_shows_target_and_window_split():
     assert "011 ER" in page and "แผนกอื่นทั้งหมด" in page
     assert "010 OPD จุดซักประวัติ ดูเหมือนจุดซักประวัติ" in page            # ติ๊กจุดซักประวัติผิด = เตือน
     assert 'name="add_allow" value="1"' in page
+
+
+def test_install_adds_allow_even_when_script_unchanged(monkeypatch):
+    """ฐานที่ติดตั้ง script ล่าสุดแล้วแต่ขาดแผนก ER ใน allow list — ต้องเพิ่มได้โดยไม่ต้องเปลี่ยน script"""
+    script = install_alert.build_script("011", avpu=False, er_gcs=False, spo2_cols=set())
+    cur = FakeCur(DEPS, allow=["002"], script=script)
+    conn = types.SimpleNamespace(cursor=lambda: cur, commit=lambda: None, rollback=lambda: None, close=lambda: None)
+    monkeypatch.setattr(install_alert, "connect", lambda a: conn)
+    monkeypatch.setattr(install_alert, "opdscreen_cols", lambda c: set())
+    monkeypatch.setattr(install_alert, "table_cols", lambda c, t: set())
+    args = types.SimpleNamespace(er_deps="011", mews_alert=5, spo2_alert=92, news2_alert=5, wbc_items="",
+                                 band_items="", probe=False, skip_forms=None, add_allow=True, yes=True,
+                                 replace=False, host="h", db="hos_test", user="u")
+    with pytest.raises(SystemExit, match="เพิ่มแผนก 011"):
+        install_alert.cmd_install(args)
+    assert [p for s, p in cur.log if s.lower().startswith("insert")] == [("011",)]
