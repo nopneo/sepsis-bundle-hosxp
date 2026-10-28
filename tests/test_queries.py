@@ -95,10 +95,22 @@ def test_time_zero_keeps_enter_er_when_nothing_earlier(monkeypatch):
 
 def test_time_zero_uses_er_arrival_note_when_sos_does_not_cross(monkeypatch):
     """SOS ที่คำนวณได้พอดีไม่เกินเกณฑ์ (เช่นสูตร HOSxP คำนวณต่างเล็กน้อย) แต่พยาบาลเขียนเวลารับที่ ER ไว้ใน
-    HPI เร็วกว่า enter_er_time — ต้องใช้เวลาในบันทึกแทน (เคสจริง รพ.วังน้ำเขียว 28 ต.ค. 69)"""
+    HPI เร็วกว่า enter_er_time — ต้องใช้เวลาในบันทึกแทน (เคสจริง รพ.วังน้ำเขียว 28 ต.ค. 69 — เขียนคำเชื่อมเป็น
+    "at" ปนอังกฤษ ไม่ใช่ "ที่" แบบที่คาดไว้ตอนแรก)"""
     monkeypatch.setattr(queries, "fetch", lambda sql, params=None: [])   # ไม่มีแถว/ไม่เข้าเกณฑ์ SOS เลย
     monkeypatch.setattr(queries, "fetch_one",
-                         lambda sql, params=None: {"t": "รับผู้ป่วยจาก OPD ที่ ER 08.34 น. V/S T = 38.8 c"})
+                         lambda sql, params=None: {"t": "รับผู้ป่วย OPD at ER 08.34 น. V/S T = 38.8 c"})
+    monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
+    case = dict(CASE, vstdate="2026-10-28", vsttime="08:29:00", enter_er_time="2026-10-28 08:59:00")
+    tz, src = queries.time_zero_info(case)
+    assert (src, tz) == ("er_arrival_note", datetime(2026, 10, 28, 8, 34))
+
+
+def test_time_zero_uses_er_arrival_note_with_thai_connector(monkeypatch):
+    """คำเชื่อมแบบไทยล้วน "...ที่ ER..." ก็ต้องจับได้เหมือนกัน"""
+    monkeypatch.setattr(queries, "fetch", lambda sql, params=None: [])
+    monkeypatch.setattr(queries, "fetch_one",
+                         lambda sql, params=None: {"t": "รับผู้ป่วยจาก OPD ที่ ER 08.34 น."})
     monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
     case = dict(CASE, vstdate="2026-10-28", vsttime="08:29:00", enter_er_time="2026-10-28 08:59:00")
     tz, src = queries.time_zero_info(case)
@@ -114,7 +126,7 @@ def test_time_zero_picks_earliest_of_sos_and_er_arrival_note(monkeypatch):
 
     monkeypatch.setattr(queries, "fetch", fetch)
     monkeypatch.setattr(queries, "fetch_one",
-                         lambda sql, params=None: {"t": "รับผู้ป่วยจาก OPD ที่ ER 08.34 น."})
+                         lambda sql, params=None: {"t": "รับผู้ป่วย OPD at ER 08.34 น."})
     monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
     case = dict(CASE, vstdate="2026-10-28", vsttime="08:29:00", enter_er_time="2026-10-28 08:59:00")
     tz, src = queries.time_zero_info(case)
