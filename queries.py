@@ -8,8 +8,9 @@
 time-zero (โหมด er, ค่าเริ่มต้น) = ค่าแรกที่มีของ
   er_regist.sepsis_recognition_datetime -> triage_datetime -> enter_er_time -> ovst (เวลาลงทะเบียน)
   ปัจจุบัน ER ไม่ได้กรอกสองช่องแรก จึงได้ enter_er_time เป็นส่วนใหญ่ — แต่ enter_er_time มักกรอกช้ากว่าเวลาจริง
-  (พยาบาลกรอกหลังทำหัตถการ/สั่ง lab ไปแล้ว) ถ้าสัญญาณชีพใน er_regist_vital_sign_list เข้าเกณฑ์ SOS Score
-  (สูตรเดียวกับหน้าต่างเตือน ER) เร็วกว่า enter_er_time จะใช้เวลานั้นแทน (sos_score.py, ดู _sos_cross_time)
+  (พยาบาลกรอกหลังทำหัตถการ/สั่ง lab ไปแล้ว) ถ้าเจอเวลาที่เร็วกว่านั้นจาก (1) สัญญาณชีพใน
+  er_regist_vital_sign_list ที่เข้าเกณฑ์ SOS Score (สูตรเดียวกับหน้าต่างเตือน ER, sos_score.py) หรือ
+  (2) ข้อความที่พยาบาลเขียนว่ารับคนไข้ไว้ที่ ER ใน opdscreen.hpi (nurse_notes.ER_ARRIVE) จะใช้เวลานั้นแทน
 
 เวลาของแต่ละ element คือ "เวลาสั่ง/บันทึกคำสั่ง" ไม่ใช่เวลาให้ยาจริง — ระบบไม่มีบันทึกการให้ยา
   (ipd_mar = ตารางคำสั่งยา เวลาเท่ากับเวลาสั่ง ไม่ใช่เวลาพยาบาลให้)
@@ -105,6 +106,7 @@ TIME_ZERO_LABEL = {
     "sepsis_recognition": "เวลารับรู้ sepsis (ER)",
     "triage": "เวลา triage (ER)",
     "sos_alert": "เวลา SOS Score เข้าเกณฑ์ (ER)",
+    "er_arrival_note": "เวลาเข้า ER (บันทึกพยาบาล)",
     "enter_er": "เวลาเข้า ER",
     "visit": "เวลาลงทะเบียน",
     "admission": "เวลา admit",
@@ -289,6 +291,18 @@ def _sos_cross_time(vn, around):
     return None
 
 
+def _er_arrival_note_time(vn, around):
+    """เวลาที่พยาบาลเขียนไว้ใน HPI ว่าคนไข้มาถึง/รับไว้ที่ ER จริง เช่น "รับผู้ป่วยจาก OPD ที่ ER 08.34 น."
+
+    (nurse_notes.ER_ARRIVE) — around ใช้แค่กำหนดวันที่/ข้ามเที่ยงคืน ไม่พบคืน None
+    """
+    text = _nurse_text(vn)
+    if not text:
+        return None
+    note = nurse_notes.parse(text, around).get("er_arrival")
+    return note["dt"] if note else None
+
+
 def time_zero_info(case):
     """(datetime, ชื่อแหล่ง) ของเวลาเริ่มนับ bundle"""
     if TIME_ZERO_MODE == "admission" and case.get("regdate"):
@@ -301,9 +315,19 @@ def time_zero_info(case):
     enter_er = _to_dt_single(case.get("enter_er_time"))
     visit = _to_dt(case["vstdate"], case.get("vsttime"))
     anchor = enter_er or visit
-    sos_at = _sos_cross_time(case["vn"], anchor) if anchor and case.get("vn") else None
-    if sos_at and sos_at < anchor:
-        return sos_at, "sos_alert"
+    # enter_er_time มักกรอกช้ากว่าเวลาจริง — ถ้ามีหลักฐานว่าคนไข้มาถึงเร็วกว่านั้น (สัญญาณชีพเข้าเกณฑ์ SOS
+    # หรือพยาบาลเขียนเวลารับไว้ที่ ER ในบันทึก) ให้ใช้เวลาที่เร็วที่สุดในนั้นแทน ไม่มีผลถ้าทุกอย่างช้ากว่า anchor อยู่แล้ว
+    candidates = []
+    if anchor and case.get("vn"):
+        sos_at = _sos_cross_time(case["vn"], anchor)
+        if sos_at:
+            candidates.append((sos_at, "sos_alert"))
+        note_at = _er_arrival_note_time(case["vn"], anchor)
+        if note_at:
+            candidates.append((note_at, "er_arrival_note"))
+    earlier = [c for c in candidates if c[0] < anchor]
+    if earlier:
+        return min(earlier, key=lambda c: c[0])
     if enter_er:
         return enter_er, "enter_er"
     return visit, "visit"

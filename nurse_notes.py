@@ -7,6 +7,9 @@
 
 นับเป็นเวลาเฉพาะเมื่อมี at / stat / เวลา นำหน้า หรือ น. ต่อท้าย — กันตัวเลขอย่าง
 0.9%NaCl, Cr 6.14, INR 2.91 ถูกอ่านเป็นเวลา
+
+ยังอ่านเวลาที่คนไข้มาถึง ER จริง (key "er_arrival") เช่น "รับผู้ป่วยจาก OPD ที่ ER 08.34 น." — queries.py
+ใช้เป็น time-zero แทน er_regist.enter_er_time เมื่อ enter_er_time กรอกช้ากว่า (พยาบาลมักกรอกหลังทำหัตถการแล้ว)
 """
 
 import re
@@ -24,6 +27,10 @@ OXYGEN = re.compile(
     r"(on\s*o2|o2\s*(canu|cannu|mask|nasal)|nasal\s*cann\w*|mask\s*c\s*bag|hfnc|high\s*flow|"
     r"\bet[\s-]*tube|\bett\b|intubat\w*|ventilator|on\s*vent|bag[\s-]*mask)", re.I)
 URINE = re.compile(r"(foley|สวนปัสสาวะ|retain(ed)?\s*(foley|cath)|urine\s*output|\bu\s*/\s*o\b|\bi\s*/\s*o\b)", re.I)
+# เวลาที่คนไข้มาถึง/รับไว้ที่ ER จริง เช่น "รับผู้ป่วยจาก OPD ที่ ER 08.34 น." — ไม่นับ "ส่ง ER" ซึ่งเป็นเวลาที่
+# ต้นทาง (OPD) ตัดสินใจส่งตัว ไม่ใช่เวลาที่ ER รับไว้จริง (enter_er_time ที่ ER กรอกในระบบมักช้ากว่านี้)
+ER_ARRIVE = re.compile(
+    r"(รับ[^.\n]{0,25}?ที่\s*er\b|มาถึง\s*er\b|เข้า\s*er\b|arriv\w*\s*(?:at\s*)?er\b|er\s*arrival)", re.I)
 # ยากระตุ้นความดัน — norepinephrine ก่อน epinephrine เพราะชื่อซ้อนกัน
 VASOPRESSOR = re.compile(r"\b(nor[\s-]?epi\w*|levophed|noradrenalin\w*|dopamine|adrenalin\w*|epinephrine)", re.I)
 BALANCED = re.compile(r"(\blrs\b|\brls\b|ringer|acetar|sterofundin|plasma[\s-]*lyte)", re.I)
@@ -130,7 +137,8 @@ def parse(text, tz, fluid_hours=3, written_at=None):
     for segment in SEGMENT_SPLIT.split(text):
         for key, rx, need_iv in (("antibiotic", ANTIBIOTIC, False), ("iv_fluid", FLUID, True),
                                  ("culture", CULTURE, False), ("oxygen", OXYGEN, False),
-                                 ("urine_output", URINE, False), ("vasopressor", VASOPRESSOR, False)):
+                                 ("urine_output", URINE, False), ("vasopressor", VASOPRESSOR, False),
+                                 ("er_arrival", ER_ARRIVE, False)):
             m = rx.search(segment)
             if m:
                 record(key, segment, m, need_iv)

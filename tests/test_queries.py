@@ -77,18 +77,48 @@ def test_time_zero_uses_sos_cross_time_when_earlier_than_enter_er(monkeypatch):
         return [row] if "er_regist_vital_sign_list" in sql else []
 
     monkeypatch.setattr(queries, "fetch", fetch)
+    monkeypatch.setattr(queries, "fetch_one", lambda sql, params=None: {})   # ไม่มีบันทึก HPI ในเคสนี้
     monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
     case = dict(CASE, vstdate="2026-10-28", vsttime="08:29:00", enter_er_time="2026-10-28 08:59:00")
     tz, src = queries.time_zero_info(case)
     assert (src, tz) == ("sos_alert", datetime(2026, 10, 28, 8, 40))
 
 
-def test_time_zero_keeps_enter_er_when_sos_not_earlier(monkeypatch):
-    """ไม่พบสัญญาณชีพเข้าเกณฑ์ SOS ก่อน enter_er_time — ยังใช้ enter_er_time เหมือนเดิม"""
+def test_time_zero_keeps_enter_er_when_nothing_earlier(monkeypatch):
+    """ไม่พบสัญญาณชีพเข้าเกณฑ์ SOS และไม่มีบันทึกเวลารับที่ ER ก่อน enter_er_time — ยังใช้ enter_er_time เหมือนเดิม"""
     monkeypatch.setattr(queries, "fetch", lambda sql, params=None: [])
+    monkeypatch.setattr(queries, "fetch_one", lambda sql, params=None: {})
     monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
     tz, src = queries.time_zero_info(dict(CASE))
     assert (src, tz) == ("enter_er", datetime(2026, 10, 16, 11, 32))
+
+
+def test_time_zero_uses_er_arrival_note_when_sos_does_not_cross(monkeypatch):
+    """SOS ที่คำนวณได้พอดีไม่เกินเกณฑ์ (เช่นสูตร HOSxP คำนวณต่างเล็กน้อย) แต่พยาบาลเขียนเวลารับที่ ER ไว้ใน
+    HPI เร็วกว่า enter_er_time — ต้องใช้เวลาในบันทึกแทน (เคสจริง รพ.วังน้ำเขียว 28 ต.ค. 69)"""
+    monkeypatch.setattr(queries, "fetch", lambda sql, params=None: [])   # ไม่มีแถว/ไม่เข้าเกณฑ์ SOS เลย
+    monkeypatch.setattr(queries, "fetch_one",
+                         lambda sql, params=None: {"t": "รับผู้ป่วยจาก OPD ที่ ER 08.34 น. V/S T = 38.8 c"})
+    monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
+    case = dict(CASE, vstdate="2026-10-28", vsttime="08:29:00", enter_er_time="2026-10-28 08:59:00")
+    tz, src = queries.time_zero_info(case)
+    assert (src, tz) == ("er_arrival_note", datetime(2026, 10, 28, 8, 34))
+
+
+def test_time_zero_picks_earliest_of_sos_and_er_arrival_note(monkeypatch):
+    """มีทั้งสองสัญญาณ — ใช้ตัวที่เร็วที่สุด"""
+    row = {"d": date(2026, 10, 28), "t": "08:50:00", "temp": 38.8, "bps": 85, "pr": 125, "rr": 28}
+
+    def fetch(sql, params=None):
+        return [row] if "er_regist_vital_sign_list" in sql else []
+
+    monkeypatch.setattr(queries, "fetch", fetch)
+    monkeypatch.setattr(queries, "fetch_one",
+                         lambda sql, params=None: {"t": "รับผู้ป่วยจาก OPD ที่ ER 08.34 น."})
+    monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
+    case = dict(CASE, vstdate="2026-10-28", vsttime="08:29:00", enter_er_time="2026-10-28 08:59:00")
+    tz, src = queries.time_zero_info(case)
+    assert (src, tz) == ("er_arrival_note", datetime(2026, 10, 28, 8, 34))
 
 
 def test_scheduler_lock_is_exclusive(tmp_path, monkeypatch):
