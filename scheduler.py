@@ -29,6 +29,7 @@ import db
 import flex
 import moph_notify
 import notify
+import ward_watch
 from queries import (BUNDLE_WINDOW_MIN, TIME_ZERO_LABEL, bundle_status, find_sepsis_cases,
                      time_zero_info, triage_info)
 
@@ -120,8 +121,30 @@ def run(lookback_days=3):
                 _mark_notified(conn, an, "bundle_result")
                 log.info("ส่งการ์ดผล bundle %s", an)
 
+    # หอผู้ป่วยแยก try — ฝั่งนี้ล้มเหลวต้องไม่กระทบการแจ้งเคส ER ด้านบน
+    try:
+        _run_ward(conn, now)
+    except Exception:
+        log.exception("เฝ้าระวังหอผู้ป่วยล้มเหลว")
+
     conn.close()
     log.info("ตรวจแล้ว %d เคส", len(cases))
+
+
+def _run_ward(conn, now):
+    """สัญญาณชีพหอผู้ป่วยเข้าเกณฑ์ SOS > 3 + ไข้ — ผู้ป่วยละไม่เกินวันละ 1 การ์ด"""
+    alerts = ward_watch.find_ward_alerts(now)
+    for alert in alerts:
+        key = alert["key"]
+        if _already_notified(conn, [key], "ward_sos"):
+            continue
+        try:
+            _dispatch(flex.ward_alert(alert), notify.format_ward_alert_message(alert))
+        except Exception as exc:
+            log.error("แจ้งเตือน ward_sos ล้มเหลว %s: %s", key, exc)
+        else:
+            _mark_notified(conn, key, "ward_sos")
+            log.info("ส่งการ์ดหอผู้ป่วย %s SOS %s", key, alert["sos"])
 
 
 def _try_lock():

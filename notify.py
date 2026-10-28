@@ -42,6 +42,17 @@ def format_new_case_message(case):
     )
 
 
+def format_ward_alert_message(alert):
+    v = alert["vitals"]
+    return (
+        f"⚠️ หอผู้ป่วย: SOS {alert['sos']} ร่วมกับไข้/ตัวเย็น — แจ้งแพทย์ประเมิน\n"
+        "AN: xxx\n"
+        f"Ward: {alert.get('ward_name') or '-'}  เตียง: {alert.get('bed') or '-'}\n"
+        f"เวลาวัด: {alert['at']:%d/%m %H:%M}\n"
+        f"T {v.get('temp')}  BP {v.get('sbp')}/{v.get('dbp')}  HR {v.get('hr')}  RR {v.get('rr')}"
+    )
+
+
 def format_bundle_message(result):
     lines = [
         "🔔 ผล Sepsis Six Bundle",

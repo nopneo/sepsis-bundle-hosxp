@@ -10,7 +10,9 @@ import hmac
 import ipaddress
 import os
 import secrets
+import sqlite3
 import time
+from contextlib import closing
 from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
@@ -23,6 +25,7 @@ import flex
 import login_guard
 import moph_notify
 import queries
+import ward_watch
 
 
 class PrefixMiddleware:
@@ -212,6 +215,38 @@ def dashboard():
                            d1=d1, d2=d2, today=today, period=period_label(d1, d2),
                            quick=quick_ranges(today), notice=notice, updated=datetime.now(),
                            lac_h=queries.LACTATE_REPEAT_HOURS)
+
+
+SUSPECT_MAX_DAYS = 92   # คำนวณสถานะการดูแลทีละ AN — ช่วงยาวกว่านี้ช้าเกิน timeout
+
+
+def _ward_sent_ans():
+    """AN ที่ส่งการ์ดหอผู้ป่วยไปแล้ว (notify_log ของ scheduler, คีย์ AN|วันที่)"""
+    path = os.path.join(config.BASE_DIR, "data", "sepsis_bundle.sqlite")
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as c:
+            return [r[0] for r in c.execute("select an from notify_log where notify_type='ward_sos'")]
+    except sqlite3.Error:
+        return []
+
+
+@app.route("/suspected")
+def suspected():
+    """ผู้ป่วยในที่สัญญาณชีพเข้าเกณฑ์ SOS > 3 ร่วมกับไข้ แต่ยังไม่มี ICD10 sepsis — ให้ทีมตามดู"""
+    d1, d2, notice = _date_range()
+    if (d2 - d1).days >= SUSPECT_MAX_DAYS:
+        d1 = d2 - timedelta(days=SUSPECT_MAX_DAYS - 1)
+        notice = f"หน้านี้ดูได้ครั้งละไม่เกิน {SUSPECT_MAX_DAYS} วัน — แสดง {period_label(d1, d2)}"
+    cases, diagnosed = ward_watch.suspected_cases(d1, d2, _ward_sent_ans())
+    if not unlocked():
+        cases = [dict(c, an=MASK, hn=MASK) for c in cases]
+    today = date.today()
+    return render_template("suspected.html", cases=cases, diagnosed=diagnosed,
+                           untreated=sum(1 for c in cases if not c["care"]),
+                           admitted=sum(1 for c in cases if not c["dch_at"]),
+                           d1=d1, d2=d2, today=today, period=period_label(d1, d2),
+                           quick=[q for q in quick_ranges(today) if (q[2] - q[1]).days < SUSPECT_MAX_DAYS],
+                           notice=notice, updated=datetime.now(), sos_gt=ward_watch.SOS_GT)
 
 
 @app.route("/api/data.json")

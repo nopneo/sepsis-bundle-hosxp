@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เคสสงสัย Sepsis — {{ hospital }}</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='fonts.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<style>
+  .range { margin-top: 16px; }
+  .range .ch .set { margin-left: auto; }
+  .rf { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+  .rf label { display: flex; flex-direction: column; gap: 4px; font-family: "Kanit", sans-serif;
+              font-weight: 600; font-size: 14.5px; color: var(--navy); }
+  .rf input { font: inherit; font-family: "Sarabun", sans-serif; font-weight: 400; font-size: 16.5px; color: var(--ink);
+              padding: 8px 12px; border: 1.5px solid #cfc8ee; border-radius: 12px; background: #fff; min-width: 170px; }
+  .rf input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(109,78,232,.18); }
+  .rf button { padding: 9px 20px; border: none; border-radius: 12px; cursor: pointer; color: #fff;
+               background: linear-gradient(135deg, #6d4ee8, #a47bf7); box-shadow: 0 6px 14px rgba(109,78,232,.28);
+               font-family: "Kanit", sans-serif; font-weight: 600; font-size: 16px; }
+  .rf button[disabled] { opacity: .7; cursor: progress; }
+  .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+  .sec { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px;
+         font-family: "Kanit", sans-serif; font-weight: 600; font-size: 21px; color: var(--navy); }
+  .sec .cnt { font-family: "Sarabun", sans-serif; font-weight: 400; font-size: 15px; color: var(--muted); }
+  .cases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .case { position: relative; overflow: hidden; }
+  .case::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; }
+  .case.none::before { background: linear-gradient(180deg, #e23b3b, #f77f7f); }
+  .case.care::before { background: linear-gradient(180deg, #f08a0b, #fbbf46); }
+  .case-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+  .badge { display: inline-block; padding: 3px 14px; border-radius: 999px; color: #fff;
+           font-family: "Kanit", sans-serif; font-weight: 600; font-size: 14.5px; }
+  .tz { font-size: 14px; color: var(--muted); }
+  .case-id { margin-top: 10px; font-size: 16px; color: var(--muted); }
+  .case-id b { font-family: "Kanit", sans-serif; font-weight: 600; font-size: 21px; color: var(--navy); margin-right: 8px; }
+  .meta { font-size: 15px; color: #4b5563; margin-top: 2px; }
+  .icd { display: inline-block; background: #efe9ff; color: #5b3fd6; border-radius: 8px; padding: 0 8px;
+         font-family: "Kanit", sans-serif; font-weight: 600; font-size: 14px; }
+  .dispo { display: inline-block; margin-top: 8px; padding: 3px 12px; border-radius: 10px; font-size: 14.5px; line-height: 1.45; }
+  .dispo b { font-family: "Kanit", sans-serif; font-weight: 600; }
+  .d-admit { background: #efe9ff; color: #4c3aa8; }
+  .d-dch { background: #eef0f5; color: #475569; }
+  .box { margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: #f8f6ff; border: 1px solid var(--line); }
+  .box .hd { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center;
+             font-family: "Kanit", sans-serif; font-weight: 600; font-size: 14.5px; color: var(--navy); }
+  .vit { font-size: 14px; color: #4b5563; margin-top: 4px; }
+  .tag { display: inline-block; padding: 1px 10px; border-radius: 999px; font-family: "Kanit", sans-serif;
+         font-weight: 600; font-size: 13.5px; }
+  .t-sos { background: #ffedd5; color: #b45309; }
+  .t-ok { background: #d1fae5; color: #047857; }
+  .t-none { background: #fee2e2; color: #b91c1c; }
+  .t-sent { background: #e0ecff; color: #1e3a8a; }
+  .t-mute { background: #eef0f5; color: #475569; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .empty { text-align: center; color: var(--muted); padding: 34px; }
+  .note { margin-top: 18px; }
+
+  @media (max-width: 900px) { .cases { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) {
+    .rf label { flex: 1 1 140px; }
+    .rf input { min-width: 0; width: 100%; }
+    .rf button { flex: 1 1 100%; }
+    .range .ch .set { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="โลโก้{{ hospital }}">
+    <div class="ttl">
+      <h1>เคสสงสัย Sepsis</h1>
+      <span class="pill">🩺 ผู้ป่วยในที่ยังไม่มีวินิจฉัย Sepsis</span>
+    </div>
+    <div class="chip">
+      <span class="a">{{ hospital }}</span>
+      <div class="b">อัปเดต {{ updated|thdt }}</div>
+    </div>
+  </header>
+
+  <section class="card range">
+    <div class="ch"><span class="ic">📅</span>ช่วงวันที่เข้าเกณฑ์ในหอผู้ป่วย
+      <small>{{ period }} · พบ {{ cases|length }} ราย</small>
+      <span class="set">
+      <a class="btn" href="{{ url_for('dashboard') }}">← Sepsis Six Bundle</a>
+      {%- if locked %}<a class="btn" href="{{ url_for('unlock', next=request.full_path) }}">🔒 ดู HN/AN</a>
+      {%- elif lock_enabled %}<form method="post" action="{{ url_for('lock') }}" style="display:inline">
+        <button class="btn" type="submit">🔓 ซ่อน HN/AN</button></form>{% endif %}</span></div>
+    <form class="rf" method="get" action="{{ url_for('suspected') }}">
+      <label>ตั้งแต่<input type="date" name="d1" value="{{ d1.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+      <label>ถึง<input type="date" name="d2" value="{{ d2.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+      <button type="submit">🔎 ดูเคส</button>
+    </form>
+    <div class="quick">
+      {% for label, q1, q2 in quick %}
+        <a class="btn {{ 'active' if (q1, q2) == (d1, d2) else '' }}"
+           href="{{ url_for('suspected', d1=q1.isoformat(), d2=q2.isoformat()) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    {% if notice %}<div class="alert y"><span class="ai">⚠️</span><div>{{ notice }}</div></div>{% endif %}
+  </section>
+
+  <section class="kpis">
+    <div class="kpi g-orange">
+      <div class="e">🔎</div>
+      <div class="l">เคสสงสัย ยังไม่วินิจฉัย</div>
+      <div class="v">{{ cases|length }}<small>ราย</small></div>
+      <div class="n">SOS &gt; {{ sos_gt }} ร่วมกับไข้/ตัวเย็น อายุ ≥ 15 ปี</div>
+    </div>
+    <div class="kpi {{ 'g-red' if untreated else 'g-green' }}">
+      <div class="e">🚨</div>
+      <div class="l">ยังไม่พบการดูแลการติดเชื้อ</div>
+      <div class="v">{{ untreated }}<small>ราย</small></div>
+      <div class="n">ไม่พบยาปฏิชีวนะ / H/C / load สารน้ำ</div>
+    </div>
+    <div class="kpi g-purple">
+      <div class="e">🛏️</div>
+      <div class="l">ยังนอนโรงพยาบาล</div>
+      <div class="v">{{ admitted }}<small>ราย</small></div>
+      <div class="n">จำหน่ายแล้ว {{ cases|length - admitted }} ราย</div>
+    </div>
+    <div class="kpi g-green">
+      <div class="e">🩺</div>
+      <div class="l">เข้าเกณฑ์แล้ววินิจฉัย Sepsis</div>
+      <div class="v">{{ diagnosed }}<small>ราย</small></div>
+      <div class="n">ไม่แสดงในหน้านี้ · ดูที่หน้า Bundle</div>
+    </div>
+  </section>
+
+  <div class="alert y note"><span class="ai">ℹ️</span>
+    <div>เคสในหน้านี้<b>ไม่นับ</b>ในตัวชี้วัด Sepsis Six Bundle เพราะยังไม่มี ICD10 A40.x / A41.x / R57.2
+      ถ้าแพทย์ลงวินิจฉัยภายหลัง เคสจะย้ายไปหน้า Bundle เอง · "การดูแล" นับตั้งแต่มา ER จนถึงตอนนี้
+      (ยาปฏิชีวนะ / Hemoculture จากรายการที่สั่ง · load จากบันทึกพยาบาล) ไม่ได้ยืนยันว่าเป็นการรักษา sepsis</div></div>
+
+  <div class="sec">🗂️ รายเคส <span class="cnt">{{ period }} · เรียงจากเข้าเกณฑ์ครั้งแรกล่าสุด</span></div>
+  {% if not cases %}
+  <div class="card empty">ไม่พบผู้ป่วยในที่เข้าเกณฑ์โดยยังไม่มีวินิจฉัย Sepsis ในช่วง {{ period }}</div>
+  {% endif %}
+  <div class="cases">
+    {% for c in cases %}
+    {% set f = c.first %}{% set v = f.vitals %}
+    <article class="card case {{ 'care' if c.care else 'none' }}">
+      <div class="case-top">
+        <span class="badge {{ 'g-orange' if c.care else 'g-red' }}">
+          {{ '💊 มีการดูแลการติดเชื้อ' if c.care else '🚨 ยังไม่พบการดูแล' }}</span>
+        <span class="tz">เข้าเกณฑ์ครั้งแรก {{ c.first_at|thdt }}</span>
+      </div>
+      <div class="case-id"><b>AN {{ c.an }}</b>HN {{ c.hn }}</div>
+      <div class="meta">{{ c.ward_name or '-' }}{% if c.bed %} · เตียง {{ c.bed }}{% endif %}
+        {%- if c.pdx %} · <span class="icd" title="{{ c.pdx_name or '' }}">{{ c.pdx }}</span> {{ c.pdx_name or '' }}{% endif %}</div>
+      {% if c.dch_at %}
+      <div class="dispo d-dch">🏁 <b>{{ c.dch_label }}</b> · {{ c.dch_at|thdt }}</div>
+      {% else %}
+      <div class="dispo d-admit">🛏️ <b>ยังนอนโรงพยาบาล</b></div>
+      {% endif %}
+      <div class="box">
+        <div class="hd">🌡️ สัญญาณชีพครั้งแรกที่เข้าเกณฑ์
+          <span class="tag t-sos">SOS {{ f.sos }}</span>
+          {% if c.max_sos > f.sos %}<span class="tag t-sos">สูงสุด {{ c.max_sos }}</span>{% endif %}
+          <span class="tag t-mute">เข้าเกณฑ์ {{ c.hits }} ครั้ง · {{ c.days }} วัน</span>
+        </div>
+        <div class="vit">T {{ v.temp|n }} · BP {{ v.sbp|n }}/{{ v.dbp|n }} · HR {{ v.hr|n }} · RR {{ v.rr|n }}
+          · คะแนน T {{ f.sos_parts.T }} · BP {{ f.sos_parts.BP }} · HR {{ f.sos_parts.HR }} · RR {{ f.sos_parts.RR }}</div>
+        <div class="chips">
+          {% for x in c.care %}<span class="tag t-ok">✓ {{ x }}</span>{% endfor %}
+          {% if not c.care %}<span class="tag t-none">ไม่พบยาปฏิชีวนะ / H/C / load</span>{% endif %}
+          {% if c.sent %}<span class="tag t-sent">📨 ส่งการ์ดหอผู้ป่วยแล้ว</span>{% endif %}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+  document.querySelector(".rf").addEventListener("submit", function (e) {
+    var b = e.target.querySelector("button"); b.disabled = true; b.textContent = "⏳ กำลังโหลด…";
+  });
+  document.querySelectorAll(".quick a").forEach(function (a) {
+    a.addEventListener("click", function () { a.textContent = "⏳ " + a.textContent; });
+  });
+</script>
+
+<footer class="foot">
+  <svg class="wave" viewBox="0 0 1920 70" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 40 C 400 0, 800 70, 1200 30 S 1700 10, 1920 35 L1920 70 L0 70Z" fill="#8b6cf0" opacity=".18"/>
+    <path d="M0 55 C 500 25, 900 75, 1400 45 S 1800 40, 1920 50 L1920 70 L0 70Z" fill="#6d4ee8" opacity=".22"/>
+  </svg>
+  <div class="txt"><span>{{ hospital }} · เคสสงสัย Sepsis จากสัญญาณชีพหอผู้ป่วย</span><span>ข้อมูลจาก HOSxP / KIPS</span></div>
+</footer>
+</body>
+</html>

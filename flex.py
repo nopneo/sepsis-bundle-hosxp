@@ -302,6 +302,50 @@ def new_case(case, time_zero, window_min, test=False, tz_label="เริ่ม�
     }
 
 
+# -------------------------------------------- 1b. หอผู้ป่วย (SOS > 3 + ไข้)
+
+WARD_ACTIONS = [
+    "แจ้งแพทย์ประเมินทันที",
+    "ประเมินแหล่งติดเชื้อ · สงสัย Sepsis → เริ่ม Sepsis Six",
+    "วัดสัญญาณชีพซ้ำถี่ขึ้น · ติดตาม SpO₂ / Urine Output",
+]
+
+
+def ward_alert(alert, test=False):
+    """alert: dict จาก ward_watch.find_ward_alerts"""
+    v = alert["vitals"]
+    parts = " · ".join(f"{k} {p}" for k, p in alert["sos_parts"].items() if p)
+    rows = [
+        _card_title("🧾", "ข้อมูลผู้ป่วย"),
+        {"type": "separator", "color": "#ece8f8"},
+        _kv("AN", MASK),
+        _kv("หอผู้ป่วย", f"{alert.get('ward_name') or alert.get('ward') or '-'}"
+                         + (f"  ·  เตียง {alert['bed']}" if alert.get("bed") else "")),
+        _kv("เวลาวัด", f"{alert['at']:%d/%m %H:%M} น."),
+        _kv("ชีพจร", _vitals_text(v) +(" (on O₂)" if v.get("on_o2") else "")),
+        _kv("SOS", f"{alert['sos']} ({parts})" if parts else str(alert["sos"])),
+    ]
+    steps = [_text(f"{i}. {label}", size="sm", color=INK) for i, label in enumerate(WARD_ACTIONS, 1)]
+    temp = v.get("temp")
+    body = [
+        {"type": "box", "layout": "horizontal", "spacing": "sm", "contents": [
+            _kpi("red", "SOS Score", str(alert["sos"])),
+            _kpi("orange", "ไข้ ≥ 38" if temp and temp >= 38 else "ตัวเย็น < 36", _n(temp), "°C"),
+        ]},
+        _card(rows),
+        _card([_card_title("🩺", "สิ่งที่ควรทำ"), {"type": "separator", "color": "#ece8f8"}, *steps]),
+    ]
+    alt = f"⚠️ หอผู้ป่วย SOS {alert['sos']} ร่วมกับ T {_n(temp)} — แจ้งแพทย์ประเมิน"
+    return {
+        "type": "flex", "altText": alt[:400],
+        "contents": _bubble(
+            _header("orange", "⚠️ หอผู้ป่วย: SOS > 3 ร่วมกับไข้", "สงสัย Sepsis — แจ้งแพทย์ประเมิน", test),
+            body,
+            _footer("เกณฑ์เดียวกับหน้าต่างเตือน ER · ข้อมูลจากบันทึก KIPS"),
+        ),
+    }
+
+
 # ------------------------------------------------- ตัวอย่างสำหรับปุ่มทดสอบส่ง
 
 def sample_messages(window_min=60):

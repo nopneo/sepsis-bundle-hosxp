@@ -1,0 +1,1190 @@
+[
+ {
+  "id": 1,
+  "desc": "ปกติทุกค่า",
+  "input": {
+   "temp": 37.0,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 40
+  },
+  "expect": {
+   "parts": {
+    "temp": 0,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 0,
+   "fever_or_hypothermia": false,
+   "alert": false
+  }
+ },
+ {
+  "id": 2,
+  "desc": "ไข้สูง + shock ชัดเจน",
+  "input": {
+   "temp": 39.2,
+   "sbp": 82,
+   "pulse": 128,
+   "rr": 28,
+   "age_y": 60
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 2,
+    "pulse": 2,
+    "rr": 2
+   },
+   "sos": 8,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 3,
+  "desc": "ทุกค่าได้ 3 (ยกเว้น T ได้สูงสุด 2)",
+  "input": {
+   "temp": 40.0,
+   "sbp": 75,
+   "pulse": 145,
+   "rr": 40,
+   "age_y": 55
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 3,
+    "pulse": 3,
+    "rr": 3
+   },
+   "sos": 11,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 4,
+  "desc": "SOS 4 พอดี + ไข้ 38.0 (ขอบล่างของไข้)",
+  "input": {
+   "temp": 38.0,
+   "sbp": 95,
+   "pulse": 110,
+   "rr": 22,
+   "age_y": 30
+  },
+  "expect": {
+   "parts": {
+    "temp": 0,
+    "sbp": 1,
+    "pulse": 1,
+    "rr": 1
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 5,
+  "desc": "SOS 4 + ตัวเย็น 35.9",
+  "input": {
+   "temp": 35.9,
+   "sbp": 95,
+   "pulse": 110,
+   "rr": 22,
+   "age_y": 70
+  },
+  "expect": {
+   "parts": {
+    "temp": 1,
+    "sbp": 1,
+    "pulse": 1,
+    "rr": 1
+   },
+   "sos": 4,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 6,
+  "desc": "SOS 3 + ไข้ — ยังไม่เตือน (ต้อง > 3)",
+  "input": {
+   "temp": 38.6,
+   "sbp": 120,
+   "pulse": 95,
+   "rr": 22,
+   "age_y": 45
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 1
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 7,
+  "desc": "SOS สูงแต่ไม่มีไข้ — ไม่เตือน",
+  "input": {
+   "temp": 37.5,
+   "sbp": 80,
+   "pulse": 140,
+   "rr": 36,
+   "age_y": 45
+  },
+  "expect": {
+   "parts": {
+    "temp": 0,
+    "sbp": 3,
+    "pulse": 3,
+    "rr": 3
+   },
+   "sos": 9,
+   "fever_or_hypothermia": false,
+   "alert": false
+  }
+ },
+ {
+  "id": 8,
+  "desc": "ผู้ป่วยเด็กอายุ 14 ปี — ไม่เตือน (ใช้ PEWS)",
+  "input": {
+   "temp": 39.0,
+   "sbp": 85,
+   "pulse": 140,
+   "rr": 30,
+   "age_y": 14
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 2,
+    "pulse": 3,
+    "rr": 2
+   },
+   "sos": 9,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 9,
+  "desc": "อายุ 15 ปีพอดี — เตือน",
+  "input": {
+   "temp": 39.0,
+   "sbp": 85,
+   "pulse": 140,
+   "rr": 30,
+   "age_y": 15
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 2,
+    "pulse": 3,
+    "rr": 2
+   },
+   "sos": 9,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 10,
+  "desc": "T 36.0 ได้ 1 แต่ไม่นับเป็นตัวเย็น (ต้อง < 36)",
+  "input": {
+   "temp": 36.0,
+   "sbp": 85,
+   "pulse": 125,
+   "rr": 26,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 1,
+    "sbp": 2,
+    "pulse": 2,
+    "rr": 2
+   },
+   "sos": 7,
+   "fever_or_hypothermia": false,
+   "alert": false
+  }
+ },
+ {
+  "id": 11,
+  "desc": "T 36.05 ตกช่องว่างระหว่างช่วง ได้ 0 ตามสูตรเดิม",
+  "input": {
+   "temp": 36.05,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 0,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 0,
+   "fever_or_hypothermia": false,
+   "alert": false
+  }
+ },
+ {
+  "id": 12,
+  "desc": "T 38.45 ตกช่องว่างระหว่างช่วง ได้ 0 แต่นับเป็นไข้",
+  "input": {
+   "temp": 38.45,
+   "sbp": 85,
+   "pulse": 125,
+   "rr": 26,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 0,
+    "sbp": 2,
+    "pulse": 2,
+    "rr": 2
+   },
+   "sos": 6,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 13,
+  "desc": "T 38.4 ได้ 1",
+  "input": {
+   "temp": 38.4,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 1,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 1,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 14,
+  "desc": "T 38.5 ได้ 2",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 15,
+  "desc": "T 35.0 ได้ 2",
+  "input": {
+   "temp": 35.0,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 16,
+  "desc": "T 35.1 ได้ 1",
+  "input": {
+   "temp": 35.1,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 1,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 1,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 17,
+  "desc": "T 0 = ไม่ได้กรอก ได้ 0 และไม่นับเป็นตัวเย็น",
+  "input": {
+   "temp": 0,
+   "sbp": 80,
+   "pulse": 140,
+   "rr": 36,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 0,
+    "sbp": 3,
+    "pulse": 3,
+    "rr": 3
+   },
+   "sos": 9,
+   "fever_or_hypothermia": false,
+   "alert": false
+  }
+ },
+ {
+  "id": 18,
+  "desc": "T 20 = ค่าผิด ได้ 0 และไม่นับเป็นตัวเย็น",
+  "input": {
+   "temp": 20,
+   "sbp": 80,
+   "pulse": 140,
+   "rr": 36,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 0,
+    "sbp": 3,
+    "pulse": 3,
+    "rr": 3
+   },
+   "sos": 9,
+   "fever_or_hypothermia": false,
+   "alert": false
+  }
+ },
+ {
+  "id": 19,
+  "desc": "SBP 50 = ค่าผิด ได้ 0 (ไม่ใช่ 3)",
+  "input": {
+   "temp": 38.5,
+   "sbp": 50,
+   "pulse": 125,
+   "rr": 26,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 2,
+    "rr": 2
+   },
+   "sos": 6,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 20,
+  "desc": "SBP 51 ได้ 3",
+  "input": {
+   "temp": 38.5,
+   "sbp": 51,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 3,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 5,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 21,
+  "desc": "SBP 80 ได้ 3 / 81 ได้ 2 (คู่นี้ดูที่ SBP)",
+  "input": {
+   "temp": 38.5,
+   "sbp": 80,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 3,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 5,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 22,
+  "desc": "SBP 81 ได้ 2",
+  "input": {
+   "temp": 38.5,
+   "sbp": 81,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 2,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 4,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 23,
+  "desc": "SBP 90 ได้ 2",
+  "input": {
+   "temp": 38.5,
+   "sbp": 90,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 2,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 4,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 24,
+  "desc": "SBP 91 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 91,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 1,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 25,
+  "desc": "SBP 100 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 100,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 1,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 26,
+  "desc": "SBP 101 ได้ 0",
+  "input": {
+   "temp": 38.5,
+   "sbp": 101,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 27,
+  "desc": "SBP 180 ได้ 0",
+  "input": {
+   "temp": 38.5,
+   "sbp": 180,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 28,
+  "desc": "SBP 181 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 181,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 1,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 29,
+  "desc": "SBP 199 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 199,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 1,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 30,
+  "desc": "SBP 200 ได้ 2",
+  "input": {
+   "temp": 38.5,
+   "sbp": 200,
+   "pulse": 80,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 2,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 4,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 31,
+  "desc": "ชีพจร 20 = ค่าผิด ได้ 0",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 20,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 32,
+  "desc": "ชีพจร 21 ได้ 3",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 21,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 3,
+    "rr": 0
+   },
+   "sos": 5,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 33,
+  "desc": "ชีพจร 40 ได้ 3",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 40,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 3,
+    "rr": 0
+   },
+   "sos": 5,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 34,
+  "desc": "ชีพจร 41 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 41,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 1,
+    "rr": 0
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 35,
+  "desc": "ชีพจร 50 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 50,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 1,
+    "rr": 0
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 36,
+  "desc": "ชีพจร 51 ได้ 0",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 51,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 37,
+  "desc": "ชีพจร 100 ได้ 0 (ช่วง 51-100 มาก่อน 100-120)",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 100,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 38,
+  "desc": "ชีพจร 101 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 101,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 1,
+    "rr": 0
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 39,
+  "desc": "ชีพจร 120 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 120,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 1,
+    "rr": 0
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 40,
+  "desc": "ชีพจร 121 ได้ 2",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 121,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 2,
+    "rr": 0
+   },
+   "sos": 4,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 41,
+  "desc": "ชีพจร 139 ได้ 2",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 139,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 2,
+    "rr": 0
+   },
+   "sos": 4,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 42,
+  "desc": "ชีพจร 140 ได้ 3",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 140,
+   "rr": 18,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 3,
+    "rr": 0
+   },
+   "sos": 5,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 43,
+  "desc": "RR 2 = ค่าผิด ได้ 0",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 2,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 44,
+  "desc": "RR 3 ได้ 3",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 3,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 3
+   },
+   "sos": 5,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 45,
+  "desc": "RR 8 ได้ 3",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 8,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 3
+   },
+   "sos": 5,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 46,
+  "desc": "RR 9 ได้ 0",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 9,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 47,
+  "desc": "RR 20 ได้ 0",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 20,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 2,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 48,
+  "desc": "RR 21 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 21,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 1
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 49,
+  "desc": "RR 25 ได้ 1",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 25,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 1
+   },
+   "sos": 3,
+   "fever_or_hypothermia": true,
+   "alert": false
+  }
+ },
+ {
+  "id": 50,
+  "desc": "RR 26 ได้ 2",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 26,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 2
+   },
+   "sos": 4,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 51,
+  "desc": "RR 35 ได้ 2 (ช่วง 26-35 มาก่อน >= 35)",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 35,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 2
+   },
+   "sos": 4,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 52,
+  "desc": "RR 36 ได้ 3",
+  "input": {
+   "temp": 38.5,
+   "sbp": 120,
+   "pulse": 80,
+   "rr": 36,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 3
+   },
+   "sos": 5,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ },
+ {
+  "id": 53,
+  "desc": "ค่าว่างทั้งหมด",
+  "input": {
+   "temp": null,
+   "sbp": null,
+   "pulse": null,
+   "rr": null,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 0,
+    "sbp": 0,
+    "pulse": 0,
+    "rr": 0
+   },
+   "sos": 0,
+   "fever_or_hypothermia": false,
+   "alert": false
+  }
+ },
+ {
+  "id": 54,
+  "desc": "ไม่ได้วัด BP (ว่าง) — คิดจากค่าที่มี",
+  "input": {
+   "temp": 39.0,
+   "sbp": null,
+   "pulse": 125,
+   "rr": 26,
+   "age_y": 50
+  },
+  "expect": {
+   "parts": {
+    "temp": 2,
+    "sbp": 0,
+    "pulse": 2,
+    "rr": 2
+   },
+   "sos": 6,
+   "fever_or_hypothermia": true,
+   "alert": true
+  }
+ }
+]

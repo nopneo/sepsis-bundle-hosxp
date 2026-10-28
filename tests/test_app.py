@@ -29,7 +29,7 @@ def _post(client, url, data, ip="127.0.0.1", **kw):
     return client.post(url, data=data, environ_base={"REMOTE_ADDR": ip}, **kw)
 
 
-@pytest.mark.parametrize("url", ["/", "/?d1=2026-10-01&d2=2026-10-15", "/?days=30", "/api/data.json", "/healthz"])
+@pytest.mark.parametrize("url", ["/", "/?d1=2026-10-01&d2=2026-10-15", "/?days=30", "/api/data.json", "/healthz", "/suspected"])
 def test_pages_render_with_empty_db(client, url):
     assert _get(client, url, ip="10.0.0.5").status_code == 200
 

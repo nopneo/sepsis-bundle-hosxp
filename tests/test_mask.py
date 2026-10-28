@@ -66,3 +66,28 @@ def test_line_messages_have_no_real_ids():
     text = json.dumps(flex.sample_messages(60), ensure_ascii=False)
     assert "TEST000001" not in text and "0000000" not in text and '"xxx"' in text
     assert "0123456" not in notify.format_new_case_message(dict(CASE, ward_name="ER", icd10_list="A41.9"))
+
+
+SUSPECT = {"an": "690012345", "hn": "0123456", "ward_name": "หอผู้ป่วยใน", "bed": "5",
+           "first_at": __import__("datetime").datetime(2026, 10, 27, 8, 0), "max_sos": 8, "hits": 2, "days": 1,
+           "first": {"sos": 6, "sos_parts": {"T": 2, "BP": 2, "HR": 1, "RR": 1},
+                     "vitals": {"temp": 39.0, "sbp": 85, "dbp": 50, "hr": 115, "rr": 24}},
+           "dch_at": None, "dch_label": None, "care": [], "sent": True, "pdx": "J18.9", "pdx_name": "Pneumonia"}
+
+
+def test_suspected_page_masks_and_renders(client, monkeypatch):
+    seen = {}
+
+    def fake(d1, d2, sent):
+        seen["range"] = (d1, d2)
+        return [dict(SUSPECT), dict(SUSPECT, an="690099999", care=["สั่งยาปฏิชีวนะ"], dch_at=SUSPECT["first_at"],
+                                    dch_label="กลับบ้าน", sent=False)], 3
+
+    monkeypatch.setattr(app_mod.ward_watch, "suspected_cases", fake)
+    html = client.get("/suspected?d1=2026-01-01&d2=2026-10-27").get_data(as_text=True)
+    assert (seen["range"][1] - seen["range"][0]).days == app_mod.SUSPECT_MAX_DAYS - 1   # ตัดช่วงยาว
+    assert "690012345" not in html and "0123456" not in html and "AN xxx" in html
+    assert "ยังไม่พบการดูแล" in html and "สั่งยาปฏิชีวนะ" in html and "ส่งการ์ดหอผู้ป่วยแล้ว" in html
+    assert "J18.9" in html and "กลับบ้าน" in html and "ไม่เกิน 92 วัน" in html
+    client.post("/unlock", data={"password": "pw-test"})
+    assert "AN 690012345" in client.get("/suspected").get_data(as_text=True)

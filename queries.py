@@ -7,7 +7,9 @@
 
 time-zero (โหมด er, ค่าเริ่มต้น) = ค่าแรกที่มีของ
   er_regist.sepsis_recognition_datetime -> triage_datetime -> enter_er_time -> ovst (เวลาลงทะเบียน)
-  ปัจจุบัน ER ไม่ได้กรอกสองช่องแรก จึงได้ enter_er_time เป็นส่วนใหญ่
+  ปัจจุบัน ER ไม่ได้กรอกสองช่องแรก จึงได้ enter_er_time เป็นส่วนใหญ่ — แต่ enter_er_time มักกรอกช้ากว่าเวลาจริง
+  (พยาบาลกรอกหลังทำหัตถการ/สั่ง lab ไปแล้ว) ถ้าสัญญาณชีพใน er_regist_vital_sign_list เข้าเกณฑ์ SOS Score
+  (สูตรเดียวกับหน้าต่างเตือน ER) เร็วกว่า enter_er_time จะใช้เวลานั้นแทน (sos_score.py, ดู _sos_cross_time)
 
 เวลาของแต่ละ element คือ "เวลาสั่ง/บันทึกคำสั่ง" ไม่ใช่เวลาให้ยาจริง — ระบบไม่มีบันทึกการให้ยา
   (ipd_mar = ตารางคำสั่งยา เวลาเท่ากับเวลาสั่ง ไม่ใช่เวลาพยาบาลให้)
@@ -34,6 +36,7 @@ from datetime import date, datetime, time as dtime, timedelta
 
 import nurse_notes
 from db import fetch, fetch_one
+from sos_score import fever, sos_parts
 
 # ---------------------------------------------------------------- เกณฑ์ ICD10
 # HOSxP เก็บรหัสแบบไม่มีจุด เช่น A419, R572
@@ -92,10 +95,16 @@ ESCALATION_HOURS = 6            # refer / เข้า ICU ภายใน 6 ช
 WINDOW_END_HOURS = int(os.getenv("SEPSIS_WINDOW_HOURS", "24"))
 WINDOW_BEFORE_MIN = 30   # คำสั่งก่อน time-zero เล็กน้อย (เช่นสั่งตั้งแต่ลงทะเบียน) ยังนับ
 TIME_ZERO_MODE = os.getenv("SEPSIS_TIME_ZERO", "er")  # er | admission
+# SOS Score ที่ ER (er_regist_vital_sign_list) — ใช้สูตรเดียวกับหน้าต่างเตือน ER (sos_score.py)
+# enter_er_time มักกรอกช้ากว่าเวลาจริง (พยาบาลกรอกหลังทำหัตถการ/สั่ง lab ไปแล้ว) — ถ้าสัญญาณชีพที่บันทึกไว้
+# เข้าเกณฑ์ SOS เร็วกว่า enter_er_time ให้ใช้เวลานั้นแทน กันเวลาที่แสดงติดลบทั้งที่คนไข้เพิ่งมาถึง
+ER_SOS_GT = int(os.getenv("SEPSIS_ER_SOS_GT", "3"))
+SOS_CROSS_WINDOW_HOURS = 6   # ค้นหาสัญญาณชีพรอบเวลา enter_er/ลงทะเบียน ± กี่ชั่วโมง
 
 TIME_ZERO_LABEL = {
     "sepsis_recognition": "เวลารับรู้ sepsis (ER)",
     "triage": "เวลา triage (ER)",
+    "sos_alert": "เวลา SOS Score เข้าเกณฑ์ (ER)",
     "enter_er": "เวลาเข้า ER",
     "visit": "เวลาลงทะเบียน",
     "admission": "เวลา admit",
@@ -254,16 +263,50 @@ def disposition(case):
     return {"code": code, "icon": icon, "label": label, "detail": detail, "at": at}
 
 
+def _sos_cross_time(vn, around):
+    """เวลาแรกที่ SOS Score > ER_SOS_GT ร่วมกับไข้/ตัวเย็น จาก er_regist_vital_sign_list ของ visit นี้
+
+    สูตรเดียวกับหน้าต่างเตือน SOS ที่ ER (sos_score.py) ค้นในช่วง ±SOS_CROSS_WINDOW_HOURS รอบ around
+    ไม่พบ หรือ HOSxP รุ่นเก่าไม่มีตารางนี้ คืน None
+    """
+    if not _has("er_regist_vital_sign_list"):
+        return None
+    rows = fetch("""
+        select vital_sign_date d, vital_sign_time t, vital_sign_temperature temp,
+               vital_sign_bps bps, vital_sign_pr pr, vital_sign_rr rr
+        from er_regist_vital_sign_list
+        where vn = %(vn)s
+          and timestamp(vital_sign_date, vital_sign_time)
+              between %(lo)s and %(hi)s
+        order by vital_sign_date, vital_sign_time
+    """, {"vn": vn, "lo": _sql_dt(around - timedelta(hours=SOS_CROSS_WINDOW_HOURS)),
+          "hi": _sql_dt(around + timedelta(hours=SOS_CROSS_WINDOW_HOURS))})
+    for r in rows:
+        if not fever(r.get("temp")):
+            continue
+        if sum(sos_parts(r.get("temp"), r.get("bps"), r.get("pr"), r.get("rr")).values()) > ER_SOS_GT:
+            return _to_dt(r.get("d"), r.get("t"))
+    return None
+
+
 def time_zero_info(case):
     """(datetime, ชื่อแหล่ง) ของเวลาเริ่มนับ bundle"""
     if TIME_ZERO_MODE == "admission" and case.get("regdate"):
         return _to_dt(case["regdate"], case.get("regtime")), "admission"
     for key, src in (("sepsis_recognition_datetime", "sepsis_recognition"),
-                     ("triage_datetime", "triage"), ("enter_er_time", "enter_er")):
+                     ("triage_datetime", "triage")):
         dt = _to_dt_single(case.get(key))
         if dt:
             return dt, src
-    return _to_dt(case["vstdate"], case.get("vsttime")), "visit"
+    enter_er = _to_dt_single(case.get("enter_er_time"))
+    visit = _to_dt(case["vstdate"], case.get("vsttime"))
+    anchor = enter_er or visit
+    sos_at = _sos_cross_time(case["vn"], anchor) if anchor and case.get("vn") else None
+    if sos_at and sos_at < anchor:
+        return sos_at, "sos_alert"
+    if enter_er:
+        return enter_er, "enter_er"
+    return visit, "visit"
 
 
 def time_zero(case):

@@ -61,6 +61,36 @@ def test_antibiotic_list_reloads_after_ttl(fake_db, monkeypatch):
     assert sum("antibiotic='Y'" in sql for sql, _ in fake_db) == 2
 
 
+def test_time_zero_prefers_explicit_recognition_even_if_later(monkeypatch):
+    """er_regist.sepsis_recognition_datetime/triage_datetime ชัดเจนอยู่แล้ว — ใช้ตามนั้นเสมอ ไม่เทียบกับ SOS"""
+    monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): False})
+    case = dict(CASE, triage_datetime="2026-10-16 12:00:00")
+    tz, src = queries.time_zero_info(case)
+    assert (src, tz) == ("triage", datetime(2026, 10, 16, 12, 0))
+
+
+def test_time_zero_uses_sos_cross_time_when_earlier_than_enter_er(monkeypatch):
+    """enter_er_time (08:59) กรอกช้ากว่าสัญญาณชีพจริงที่เข้าเกณฑ์ SOS (08:40) — ต้องใช้เวลา SOS แทน"""
+    row = {"d": date(2026, 10, 28), "t": "08:40:00", "temp": 38.8, "bps": 85, "pr": 125, "rr": 28}
+
+    def fetch(sql, params=None):
+        return [row] if "er_regist_vital_sign_list" in sql else []
+
+    monkeypatch.setattr(queries, "fetch", fetch)
+    monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
+    case = dict(CASE, vstdate="2026-10-28", vsttime="08:29:00", enter_er_time="2026-10-28 08:59:00")
+    tz, src = queries.time_zero_info(case)
+    assert (src, tz) == ("sos_alert", datetime(2026, 10, 28, 8, 40))
+
+
+def test_time_zero_keeps_enter_er_when_sos_not_earlier(monkeypatch):
+    """ไม่พบสัญญาณชีพเข้าเกณฑ์ SOS ก่อน enter_er_time — ยังใช้ enter_er_time เหมือนเดิม"""
+    monkeypatch.setattr(queries, "fetch", lambda sql, params=None: [])
+    monkeypatch.setattr(queries, "_schema_cache", {("er_regist_vital_sign_list", None): True})
+    tz, src = queries.time_zero_info(dict(CASE))
+    assert (src, tz) == ("enter_er", datetime(2026, 10, 16, 11, 32))
+
+
 def test_scheduler_lock_is_exclusive(tmp_path, monkeypatch):
     monkeypatch.setattr(scheduler, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(scheduler, "LOCK_PATH", str(tmp_path / "scheduler.lock"))

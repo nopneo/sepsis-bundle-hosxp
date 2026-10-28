@@ -81,7 +81,9 @@ def check_schema():
                 ("opitemrece_log", None, "ประวัติการบันทึกยา (ใช้หาเวลาสั่งยาที่ ER)"),
                 ("opdscreen", "o2sat", "SpO₂ แรกรับ (NEWS2)"),
                 ("er_regist", "news2_score", "คะแนน NEWS2 ที่ ER กรอก"),
-                ("er_regist", "consciousness_level_type_id", "ระดับความรู้สึกตัว AVPU (NEWS2)")]
+                ("er_regist", "consciousness_level_type_id", "ระดับความรู้สึกตัว AVPU (NEWS2)"),
+                ("er_regist_vital_sign_list", "vital_sign_date",
+                 "สัญญาณชีพรายครั้งที่ ER — หาเวลา SOS Score เข้าเกณฑ์ ใช้แทน enter_er_time ที่กรอกช้า")]
     for table, column, desc in optional:
         name = f"{table}.{column}" if column else table
         if queries._has(table, column):

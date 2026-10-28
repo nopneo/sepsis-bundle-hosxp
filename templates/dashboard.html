@@ -141,6 +141,7 @@
     <div class="ch"><span class="ic">📅</span>ช่วงวันที่มาถึง ER
       <small>{{ period }} · พบ {{ s.cases }} ราย</small>
       <span class="set">
+      <a class="btn" href="{{ url_for('suspected') }}">🔎 เคสสงสัย (ยังไม่วินิจฉัย)</a>
       {%- if locked %}<a class="btn" href="{{ url_for('unlock', next=request.full_path) }}">🔒 ดู HN/AN</a>
       {%- elif lock_enabled %}<form method="post" action="{{ url_for('lock') }}" style="display:inline">
         <button class="btn" type="submit">🔓 ซ่อน HN/AN</button></form>{% endif %}
