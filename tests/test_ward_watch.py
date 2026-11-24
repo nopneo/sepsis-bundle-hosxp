@@ -196,7 +196,8 @@ def test_suspected_cases_groups_by_an_and_drops_diagnosed(monkeypatch):
         return rows if "ipd_nurse_note" in sql else []
 
     monkeypatch.setattr(queries, "fetch", fetch)
-    monkeypatch.setattr(queries, "_schema_cache", {})
+    # ไม่มีตาราง KIPS ในฐานจำลอง — ไม่งั้น _has() ไปถามฐานจริงผ่าน fetch_one
+    monkeypatch.setattr(queries, "_schema_cache", {("kips_ipd_nurse_focus_detail", None): False})
     monkeypatch.setattr(ward_watch, "sepsis_care", lambda an, until, kips=None:
                         {"A1": [], "B2": ["สั่งยาปฏิชีวนะ"], "C3": ["วินิจฉัย A41.9"]}[an])
     cases, diagnosed = ward_watch.suspected_cases(date(2026, 10, 27), date(2026, 10, 27), ["A1|2026-10-27"], NOW)
