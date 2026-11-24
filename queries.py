@@ -110,6 +110,7 @@ TIME_ZERO_LABEL = {
     "enter_er": "เวลาเข้า ER",
     "visit": "เวลาลงทะเบียน",
     "admission": "เวลา admit",
+    "ward_alert": "เวลาสัญญาณชีพเข้าเกณฑ์ (หอผู้ป่วย)",
 }
 
 
@@ -171,16 +172,33 @@ def _opt(alias, table, column, as_name=None):
 
 # --------------------------------------------------------- 1. ค้นหาเคส sepsis
 
-def find_sepsis_cases(lookback_days=7, d1=None, d2=None):
+def find_sepsis_cases(lookback_days=7, d1=None, d2=None, an=None):
     """visit ER/OPD ที่มี ICD10 sepsis (ที่ ER หรือหลัง admit)
 
     ช่วงวันอิง "วันที่มาถึง ER" (ovst.vstdate) — ระบุ d1/d2 (date) หรือใช้ N วันล่าสุด
     ฝั่ง iptdiag ขยายไป d2+1 วัน เผื่อมา ER ก่อนเที่ยงคืนแล้ว admit หลังเที่ยงคืน
+
+    an: ดึงแถวของผู้ป่วยในรายนี้โดยตรง ไม่ต้องมี ICD10 sepsis และไม่จำกัดวัน — ใช้กับเคสที่เกิดอาการบนหอ
+        (ward_watch.followup_result) ที่แพทย์ยังไม่ได้ลงวินิจฉัย
     """
-    if d1 is None or d2 is None:
-        d2 = date.today()
-        d1 = d2 - timedelta(days=int(lookback_days))
-    a, b, b1 = d1.isoformat(), d2.isoformat(), (d2 + timedelta(days=1)).isoformat()
+    if an:
+        source = "(select ii.vn from ipt ii where ii.an = %(an)s) v"
+        visit_dates = ""
+        params = {**ICD10_PARAMS, "an": an}
+    else:
+        if d1 is None or d2 is None:
+            d2 = date.today()
+            d1 = d2 - timedelta(days=int(lookback_days))
+        a, b, b1 = d1.isoformat(), d2.isoformat(), (d2 + timedelta(days=1)).isoformat()
+        source = f"""(
+            select od.vn from ovstdiag od
+             where od.vstdate between %(a)s and %(b)s and {_icd10_cond('od')}
+            union
+            select ii.vn from iptdiag d join ipt ii on ii.an = d.an
+             where ii.regdate between %(a)s and %(b1)s and {_icd10_cond('d')}
+        ) v"""
+        visit_dates = "and o.vstdate between %(a)s and %(b)s"
+        params = {**ICD10_PARAMS, "a": a, "b": b, "b1": b1}
     rows = fetch(f"""
         select o.vn, o.hn, i.an, i.ward, w.name ward_name, i.cur_bedno,
                o.vstdate, o.vsttime, i.regdate, i.regtime,
@@ -202,20 +220,14 @@ def find_sepsis_cases(lookback_days=7, d1=None, d2=None):
                    where od.vn = o.vn and {_icd10_cond('od')}),
                  (select group_concat(distinct d.icd10) from iptdiag d
                    where d.an = i.an and {_icd10_cond('d')})) icd10_raw
-        from (
-            select od.vn from ovstdiag od
-             where od.vstdate between %(a)s and %(b)s and {_icd10_cond('od')}
-            union
-            select ii.vn from iptdiag d join ipt ii on ii.an = d.an
-             where ii.regdate between %(a)s and %(b1)s and {_icd10_cond('d')}
-        ) v
-        join ovst o on o.vn = v.vn and o.vstdate between %(a)s and %(b)s
+        from {source}
+        join ovst o on o.vn = v.vn {visit_dates}
         left join ipt i on i.vn = o.vn
         left join ward w on w.ward = i.ward
         left join er_regist e on e.vn = o.vn
         left join opdscreen s on s.vn = o.vn
         order by o.vstdate desc, o.vsttime desc
-    """, {**ICD10_PARAMS, "a": a, "b": b, "b1": b1})
+    """, params)
     for r in rows:
         codes = sorted({c for c in (r.get("icd10_raw") or "").split(",") if c})
         r["icd10_list"] = ", ".join(fmt_icd10(c) for c in codes)
@@ -305,6 +317,8 @@ def _er_arrival_note_time(vn, around):
 
 def time_zero_info(case):
     """(datetime, ชื่อแหล่ง) ของเวลาเริ่มนับ bundle"""
+    if case.get("tz_override"):          # เคสเกิดอาการบนหอ: นับจากเวลาสัญญาณชีพเข้าเกณฑ์ ไม่ใช่เวลามา ER (ward_watch.py)
+        return case["tz_override"], "ward_alert"
     if TIME_ZERO_MODE == "admission" and case.get("regdate"):
         return _to_dt(case["regdate"], case.get("regtime")), "admission"
     for key, src in (("sepsis_recognition_datetime", "sepsis_recognition"),
@@ -391,6 +405,27 @@ def _ward_order_first(an, icodes, start, end):
           and timestamp(o.rxdate, o.rxtime) between %(start)s and %(end)s
     """, {"an": an, "icodes": sorted(icodes), "start": start, "end": end})
     return _to_dt_single(row.get("t"))
+
+
+def _ward_fluid_load_first(an, icodes, start, end):
+    """เวลาสั่งสารน้ำ "แบบโหลด" บนหอครั้งแรก — ดูข้อความวิธีใช้ (drugusage/sp_use) เช่น "IV load 500 ml then rate 100 ml/hr"
+    น้ำเกลือรายวัน ("IV drip 80 cc/hr") ไม่นับ · ไม่มีข้อความวิธีใช้ = ไม่นับ (แยกจากรายวันไม่ได้)"""
+    if not an:
+        return None
+    rows = fetch("""
+        select timestamp(o.rxdate, o.rxtime) t,
+               concat_ws(' ', u.name1, u.name2, u.name3, s.name1, s.name2, s.name3) usage_text
+        from opitemrece o
+        left join drugusage u on u.drugusage = o.drugusage
+        left join sp_use s on s.sp_use = o.sp_use
+        where o.an = %(an)s and o.item_type = 'P' and o.icode in %(icodes)s
+          and timestamp(o.rxdate, o.rxtime) between %(start)s and %(end)s
+        order by 1
+    """, {"an": an, "icodes": sorted(icodes), "start": start, "end": end})
+    for r in rows:
+        if nurse_notes.LOAD_WORD.search(r.get("usage_text") or ""):
+            return _to_dt_single(r.get("t"))
+    return None
 
 
 def _earliest(candidates):
@@ -522,7 +557,7 @@ def _kips_written(d, t):
     return dt.replace(year=dt.year - 543) if dt and dt.year > 2400 else dt
 
 
-def _kips_notes(an, tz, lo, hi):
+def _kips_notes(an, tz, lo, hi, fluid_load_only=False):
     """{key: {dt, snippet, timed}} ที่เร็วที่สุดของแต่ละรายการใน KIPS_KEYS ภายในช่วง lo-hi
 
     timed=True: เวลาที่พยาบาลเขียนในข้อความ · False: ไม่ระบุเวลา dt คือเวลาบันทึก
@@ -543,7 +578,7 @@ def _kips_notes(an, tz, lo, hi):
         written = _kips_written(r.get("record_date"), r.get("record_time"))
         if written is None or not lo <= written <= hi + timedelta(hours=KIPS_LATE_HOURS):
             continue
-        notes = nurse_notes.parse(r.get("txt") or "", tz, written_at=written)
+        notes = nurse_notes.parse(r.get("txt") or "", tz, written_at=written, fluid_load_only=fluid_load_only)
         for key in KIPS_KEYS:
             n = notes.get(key)
             if not n:
@@ -765,15 +800,39 @@ def triage_info(case, tz):
 
 # ------------------------------------------------------ 3. ประกอบผล 1 เคส
 
+# รพ.วังน้ำเขียว เจาะ Hemoculture ก่อนให้ยาปฏิชีวนะทุกเคส แต่มักสั่ง Lab หลังเจาะ เวลาสั่งจึงอาจช้ากว่าเวลาให้ยา
+# เปิดไว้ = ถ้าพบ H/C (คำสั่งหรือบันทึกที่ไม่ระบุเวลา) หลังให้ยา ถือว่าเจาะก่อนให้ยา ใช้เวลาให้ยาเป็นเวลาเจาะ
+# ไม่แตะเวลาที่พยาบาลเขียนกำกับไว้เอง · ปิดด้วย SEPSIS_ASSUME_CULTURE_BEFORE_ATB=0
+ASSUME_CULTURE_BEFORE_ATB = os.getenv("SEPSIS_ASSUME_CULTURE_BEFORE_ATB", "1").strip() != "0"
+ASSUMED_CULTURE_SOURCE = "ถือว่าเจาะก่อนให้ยา"
+
+
+def assume_culture_first(culture, atb, noted_untimed=False):
+    """culture/atb = (เวลา, ที่มา, ข้อความ) — คืน culture ที่ปรับตามกติกา ASSUME_CULTURE_BEFORE_ATB
+
+    noted_untimed: บันทึกพยาบาลเขียนถึง H/C แต่ไม่มีเวลา (ใช้เมื่อไม่พบคำสั่ง)
+    """
+    if not (ASSUME_CULTURE_BEFORE_ATB and atb[0]):
+        return culture
+    if culture[0] is None:
+        if noted_untimed:
+            return atb[0], f"{ASSUMED_CULTURE_SOURCE} (บันทึกพยาบาลไม่ระบุเวลา)", None
+        return culture
+    if culture[2] is None and culture[0].replace(second=0) > atb[0].replace(second=0):
+        return atb[0], f"{ASSUMED_CULTURE_SOURCE} ({culture[1] or 'สั่ง'} {culture[0]:%H:%M} น.)", None
+    return culture
+
 def bundle_status(case):
     tz, tz_src = time_zero_info(case)
     start, end = _window(tz)
     lo, hi = _to_dt_single(start), _to_dt_single(end)
     _er_logs.cache_clear()   # ข้อมูลเคสที่ยังดูแลอยู่เปลี่ยนได้ตลอด — แคชใช้แค่ภายในการคำนวณครั้งนี้
-    text = _nurse_text(case["vn"])
+    # เคสเกิดอาการบนหอ: บันทึก ER เป็นของการมาครั้งก่อน (เวลา HH.MM จะถูกอ่านเป็นวันนี้ผิด) — ใช้เฉพาะ KIPS + คำสั่ง
+    text = "" if case.get("ward_onset") else _nurse_text(case["vn"])
     notes = nurse_notes.parse(text, tz, fluid_hours=FLUID_HOURS)
     notes["_has_text"] = bool(text.strip())
-    kips = _kips_notes(case.get("an"), tz, lo, hi)
+    ward = bool(case.get("ward_onset"))     # เคสเกิดอาการบนหอ: สารน้ำนับเฉพาะ "โหลด" ไม่นับน้ำเกลือรายวัน
+    kips = _kips_notes(case.get("an"), tz, lo, hi, fluid_load_only=ward)
 
     def documented(key):
         """เวลาให้จริงที่พยาบาลเขียน (ER หรือ KIPS หอผู้ป่วย ภายในช่วงค้นหา) — ใช้ก่อนเวลาสั่ง"""
@@ -804,7 +863,13 @@ def bundle_status(case):
         else (culture[0], culture[1], None)
     atb = prefer_documented("antibiotic", _order_event(
         case, _antibiotics(), start, end, _to_dt_single(case.get("er_antibiotics_datetime"))))
-    fluid = prefer_documented("iv_fluid", _order_event(case, set(IV_FLUID_ICODES), start, end))
+    if ward:
+        load_at = _ward_fluid_load_first(case.get("an"), set(IV_FLUID_ICODES), start, end)
+        ordered_fluid = (load_at, "สั่งโหลดสารน้ำบนหอผู้ป่วย") if load_at else (None, None)
+    else:
+        ordered_fluid = _order_event(case, set(IV_FLUID_ICODES), start, end)
+    fluid = prefer_documented("iv_fluid", ordered_fluid)
+    culture = assume_culture_first(culture, atb, bool(notes.get("culture") or kips.get("culture")))
 
     def elem(label, event):
         event_dt, source, detail = event

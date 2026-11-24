@@ -55,7 +55,7 @@ def format_ward_alert_message(alert):
 
 def format_bundle_message(result):
     lines = [
-        "🔔 ผล Sepsis Six Bundle",
+        "🔔 " + (result.get("card_title") or "ผล Sepsis Six Bundle").lstrip("🩺 "),
         f"{'AN' if result.get('an') else 'VN'}: xxx  HN: xxx",
         f"Ward: {result.get('ward_name') or '-'}  เตียง: {result.get('bed') or '-'}",
         f"ICD10: {result.get('icd10')}",
@@ -70,7 +70,8 @@ def format_bundle_message(result):
     if result.get("culture_before_antibiotic") is False:
         lines.append("⚠️ ให้ยาปฏิชีวนะก่อนเก็บ Hemoculture (ลำดับไม่ถูกต้อง)")
     lines.append("")
-    verdict = "ผ่านเกณฑ์" if result["auto_compliant"] else "ไม่ผ่านเกณฑ์ — ควรทบทวน"
+    good, bad = result.get("card_verdicts") or ("ผ่านเกณฑ์", "ไม่ผ่านเกณฑ์ — ควรทบทวน")
+    verdict = good if result["auto_compliant"] else bad
     lines.append(f"สรุป (เฉพาะรายการที่ดึงอัตโนมัติได้): {verdict}")
     lines.append("* ออกซิเจน/Urine Output ต้องให้พยาบาลยืนยันเพิ่มเอง ระบบดึงอัตโนมัติไม่ได้")
     return "\n".join(lines)

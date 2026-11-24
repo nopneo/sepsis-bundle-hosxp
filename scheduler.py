@@ -63,6 +63,9 @@ def _conn():
     conn.execute("""create table if not exists notify_log (
         an text, notify_type text, sent_at text,
         primary key (an, notify_type))""")
+    # การ์ดตามผลหลังแจ้งเตือน SOS บนหอ: tz = เวลาสัญญาณชีพที่เข้าเกณฑ์ (เริ่มนับ bundle) · done 0=รอ 1=ส่งแล้ว 2=เก่าเกิน 3=ไม่พบผู้ป่วย
+    conn.execute("""create table if not exists ward_followup (
+        key text primary key, an text, tz text, bed text, done integer default 0, sent_at text)""")
     return conn
 
 
@@ -126,6 +129,10 @@ def run(lookback_days=3):
         _run_ward(conn, now)
     except Exception:
         log.exception("เฝ้าระวังหอผู้ป่วยล้มเหลว")
+    try:
+        _run_ward_followup(conn, now)
+    except Exception:
+        log.exception("การ์ดตามผลหอผู้ป่วยล้มเหลว")
 
     conn.close()
     log.info("ตรวจแล้ว %d เคส", len(cases))
@@ -144,7 +151,40 @@ def _run_ward(conn, now):
             log.error("แจ้งเตือน ward_sos ล้มเหลว %s: %s", key, exc)
         else:
             _mark_notified(conn, key, "ward_sos")
+            conn.execute("insert or ignore into ward_followup (key, an, tz, bed) values (?,?,?,?)",
+                         (key, alert["an"], alert["at"].isoformat(), alert.get("bed")))
+            conn.commit()
             log.info("ส่งการ์ดหอผู้ป่วย %s SOS %s", key, alert["sos"])
+
+
+def _run_ward_followup(conn, now):
+    """ครบ BUNDLE_WINDOW_MIN + GRACE_MIN หลังสัญญาณชีพเข้าเกณฑ์ → ส่งการ์ดว่าหอทำ bundle 4 ข้อทันหรือไม่ (ครั้งเดียวต่อการแจ้งเตือน)"""
+    if not ward_watch.FOLLOWUP:
+        return
+    due = timedelta(minutes=BUNDLE_WINDOW_MIN + GRACE_MIN)
+    for key, an, tz_text, bed in conn.execute("select key, an, tz, bed from ward_followup where done = 0").fetchall():
+        tz = datetime.fromisoformat(tz_text)
+        if now < tz + due:
+            continue
+        if now - tz > ward_watch.FOLLOWUP_MAX_AGE:       # ระบบหยุดไปนาน — ไม่ส่งการ์ดย้อนหลัง
+            conn.execute("update ward_followup set done = 2 where key = ?", (key,))
+            conn.commit()
+            log.info("ข้ามการ์ดตามผลหอผู้ป่วย %s (เกินเวลา)", key)
+            continue
+        try:
+            result = ward_watch.followup_result(an, tz)
+            if result is None:
+                conn.execute("update ward_followup set done = 3 where key = ?", (key,))
+                conn.commit()
+                continue
+            result["bed"] = bed or result.get("bed")
+            _dispatch(flex.bundle_result(result), notify.format_bundle_message(result))
+        except Exception as exc:
+            log.error("การ์ดตามผลหอผู้ป่วยล้มเหลว %s: %s", key, exc)   # รอบหน้าลองใหม่ จนกว่าจะเกิน FOLLOWUP_MAX_AGE
+            continue
+        conn.execute("update ward_followup set done = 1, sent_at = ? where key = ?", (now.isoformat(), key))
+        conn.commit()
+        log.info("ส่งการ์ดตามผลหอผู้ป่วย %s ผ่าน %s/4", key, sum(1 for e in result["elements"].values() if e["compliant"]))
 
 
 def _try_lock():

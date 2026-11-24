@@ -99,6 +99,43 @@ def sepsis_care(an, until, kips=None):
     return found
 
 
+#: การ์ดตามผลหลังแจ้งเตือน SOS บนหอ — รายงานว่าหอทำ Lactate/H-C/ยาปฏิชีวนะ/สารน้ำภายใน 1 ชม. หรือไม่ · ปิดด้วย 0
+FOLLOWUP = os.getenv("SEPSIS_WARD_FOLLOWUP", "1").strip() != "0"
+#: เลยเวลานี้แล้วไม่ส่ง (ระบบหยุดไปนานแล้วกลับมา) — กันการ์ดย้อนหลังท่วมกลุ่ม
+FOLLOWUP_MAX_AGE = timedelta(hours=int(os.getenv("SEPSIS_WARD_FOLLOWUP_MAX_AGE_HOURS", "6")))
+AUTO_ELEMENTS = ("lactate", "culture", "antibiotic", "iv_fluid")
+
+
+def followup_result(an, tz):
+    """ผล bundle ของผู้ป่วยในที่เกิดอาการบนหอ นับจากเวลาสัญญาณชีพเข้าเกณฑ์ tz — รูปแบบเดียวกับ queries.bundle_status
+
+    ใช้เฉพาะ 4 รายการที่ดึงอัตโนมัติได้ (ตัด SSC/NEWS2/ออกซิเจน: คำนวณจากสัญญาณชีพของ ER ครั้งก่อน ไม่ใช่ของหอ)
+    ข้อมูลมาจากคำสั่งใน HOSxP + บันทึกพยาบาล KIPS · คืน None ถ้าไม่พบผู้ป่วย
+    """
+    cases = queries.find_sepsis_cases(an=an)
+    if not cases:
+        return None
+    result = queries.bundle_status(dict(cases[0], tz_override=tz, ward_onset=True))
+    result["elements"] = {k: result["elements"][k] for k in AUTO_ELEMENTS}
+    # ไม่พบ = ไม่มีคำสั่ง/บันทึกหลังเวลาเตือนจริง (ไม่ใช่ระบบหาข้อมูลไม่ได้) — ถ้อยคำบนการ์ดต้องไม่ชวนเข้าใจผิด
+    for el in result["elements"].values():
+        if el["at"] is None:
+            el["note"] = "ไม่พบคำสั่งหรือบันทึกหลังเวลาเตือน"
+    fluid = result["elements"]["iv_fluid"]           # นับเฉพาะโหลดน้ำ ไม่นับน้ำเกลือรายวัน (queries.bundle_status ward_onset)
+    fluid["label"] = "โหลดสารน้ำ (IV Fluid load)"
+    if fluid["at"] is None:
+        fluid["note"] = "ไม่พบคำสั่งหรือบันทึกการโหลดน้ำหลังเวลาเตือน"
+    result["card_missing"] = "ไม่พบคำสั่ง"
+    result["ssc"] = None
+    result["icd10"] = result.get("icd10") or "ยังไม่มีวินิจฉัย Sepsis"
+    result["card_title"] = "🩺 ผลตอบสนองหลังแจ้งเตือนหอผู้ป่วย"
+    result["card_footer"] = "เวลาจากบันทึกพยาบาล KIPS ก่อน ไม่มีจึงใช้เวลาสั่ง"
+    # เคสที่ถูกเตือนส่วนใหญ่ยังไม่ใช่ sepsis ที่วินิจฉัย — ใช้ถ้อยคำ "ผลตอบสนองต่อการเตือน" ไม่ใช่ "ไม่ผ่านเกณฑ์"
+    result["card_verdicts"] = ("ทำครบ 4 ข้อ", "ยังไม่ครบ 4 ข้อ")
+    result["card_warning"] = "⚠️ ยังไม่พบการดูแลครบภายใน 1 ชม. — ถ้าสงสัยติดเชื้อ ควรแจ้งแพทย์ประเมิน"
+    return result
+
+
 DCH_TYPE = {"01": "กลับบ้าน", "02": "ไม่สมัครใจอยู่", "03": "หนี", "04": "ส่งต่อ",
             "05": "ส่งต่อ", "08": "เสียชีวิต", "09": "เสียชีวิต"}
 

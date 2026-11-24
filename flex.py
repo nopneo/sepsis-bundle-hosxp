@@ -415,7 +415,7 @@ def bundle_result(result, test=False):
         elif state:
             pill_txt = "ผ่าน"
         else:
-            pill_txt = "ไม่พบข้อมูล"
+            pill_txt = result.get("card_missing") or "ไม่พบข้อมูล"
         bg, fg = PILL[state]
         label_box = [_text(el["label"], size="sm", color=INK)]
         if el.get("source") and el.get("at"):
@@ -453,17 +453,20 @@ def bundle_result(result, test=False):
         body.append({"type": "box", "layout": "vertical", "backgroundColor": "#fff7d6",
                      "cornerRadius": "12px", "paddingAll": "10px", "borderWidth": "1px",
                      "borderColor": "#fcd34d",
-                     "contents": [_text("⚠️ ไม่ผ่านเกณฑ์ — ควรทบทวนเคสนี้", size="sm",
+                     "contents": [_text(result.get("card_warning") or "⚠️ ไม่ผ่านเกณฑ์ — ควรทบทวนเคสนี้", size="sm",
                                         color="#78520a", weight="bold")]})
 
-    verdict = "ผ่านเกณฑ์" if ok else "ไม่ผ่านเกณฑ์"
-    alt = f"🔔 ผล Sepsis Six Bundle {verdict} ({passed}/4 ข้อที่ตรวจอัตโนมัติ)"
+    good, bad = result.get("card_verdicts") or ("ผ่านเกณฑ์", "ไม่ผ่านเกณฑ์")
+    verdict = good if ok else bad
+    # เคสเกิดอาการบนหอ (ward_watch.followup_result) ใช้หัว/ท้ายการ์ดของตัวเอง — ที่มาของเวลาคือบันทึกพยาบาล KIPS
+    title = result.get("card_title") or "🩺 ผล Sepsis Six Bundle"
+    alt = f"🔔 {title.lstrip('🩺 ')} {verdict} ({passed}/4 ข้อที่ตรวจอัตโนมัติ)"
+    note = result.get("card_footer") or "เวลาจากบันทึกพยาบาล ER ก่อน ไม่มีจึงใช้เวลาสั่ง"
     return {
         "type": "flex", "altText": alt[:400],
         "contents": _bubble(
-            _header("green" if ok else "purple", "🩺 ผล Sepsis Six Bundle",
-                    f"{verdict} · {passed}/4 ข้อ", test),
+            _header("green" if ok else "purple", title, f"{verdict} · {passed}/4 ข้อ", test),
             body,
-            _footer("เวลาจากบันทึกพยาบาล ER ก่อน ไม่มีจึงใช้เวลาสั่ง · ➖ = ต้องยืนยันเอง"),
+            _footer(f"{note} · ➖ = ต้องยืนยันเอง"),
         ),
     }

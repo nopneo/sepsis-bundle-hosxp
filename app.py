@@ -257,7 +257,13 @@ def api_data():
 
 def _safe_next():
     nxt = request.values.get("next", "")
-    return nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("dashboard")
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        return url_for("dashboard")
+    # next มาได้ทั้งแบบมี prefix (url_for) และไม่มี (request.full_path) — ไม่เติมจะเด้งไปเว็บหลักเมื่ออยู่หลัง /sepsis/
+    root = request.script_root
+    if root and not (nxt == root or nxt.startswith((root + "/", root + "?"))):
+        nxt = root + nxt
+    return nxt
 
 
 #: หน้าตั้งค่าถามรหัสทุกครั้งที่เข้า — ปลดล็อกแล้วใช้ได้ช่วงสั้น ๆ พอกรอก/ทดสอบส่ง (แยกจากการปลดดู HN/AN)
