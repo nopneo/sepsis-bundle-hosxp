@@ -36,6 +36,8 @@ ER_ARRIVE = re.compile(
 # ยากระตุ้นความดัน — norepinephrine ก่อน epinephrine เพราะชื่อซ้อนกัน
 VASOPRESSOR = re.compile(r"\b(nor[\s-]?epi\w*|levophed|noradrenalin\w*|dopamine|adrenalin\w*|epinephrine)", re.I)
 BALANCED = re.compile(r"(\blrs\b|\brls\b|ringer|acetar|sterofundin|plasma[\s-]*lyte)", re.I)
+# คำว่าโหลดน้ำ เป็นคำเดี่ยว — ไม่นับ "volume overload" / "overloaded" ซึ่งเป็นภาวะของผู้ป่วย ไม่ใช่การให้น้ำ
+LOAD_WORD = re.compile(r"(?<![A-Za-z])(?:load(?:ing)?|bolus|free[\s-]*flow|โหลด)(?![A-Za-z])", re.I)
 VOL = r"(\d{1,2},\d{3}|\d{2,4})\s*(?:ml|cc)"
 # ปริมาณ load/bolus ที่สั่งให้ เช่น "iv load 1,500 ml", "Load เพิ่ม 500 cc" (ไม่นับ rate เช่น 80 cc/hr)
 LOAD_VOL = re.compile(r"(?:load|bolus|free\s*flow)\D{0,25}?" + VOL, re.I)
@@ -112,10 +114,11 @@ def _vasopressor_agent(word):
     return "Adrenaline"
 
 
-def parse(text, tz, fluid_hours=3, written_at=None):
+def parse(text, tz, fluid_hours=3, written_at=None, fluid_load_only=False):
     """คืน dict ของสิ่งที่พบในบันทึก: แต่ละรายการมี dt (หรือ None) + snippet ข้อความต้นทาง
 
     written_at — เวลาที่เขียนบันทึก (บันทึกหอผู้ป่วย KIPS): อ่านเวลาในข้อความย้อนจากเวลานี้แทนการนับจาก tz
+    fluid_load_only — iv_fluid นับเฉพาะข้อความที่มีคำ load/bolus/free flow (ไม่นับน้ำเกลือรายวัน "NSS rate 80 ml/hr")
 
     เพิ่มเติม: vasopressor (+agent), fluid_bolus_ml (load ภายใน fluid_hours ชม.), fluid_types
     ({"saline","balanced"}), min_sbp (BP ต่ำสุดที่บันทึก), first_spo2
@@ -142,6 +145,8 @@ def parse(text, tz, fluid_hours=3, written_at=None):
                                  ("urine_output", URINE, False), ("vasopressor", VASOPRESSOR, False),
                                  ("er_arrival", ER_ARRIVE, False)):
             m = rx.search(segment)
+            if m and key == "iv_fluid" and fluid_load_only and not LOAD_WORD.search(segment):
+                continue
             if m:
                 record(key, segment, m, need_iv)
                 if key == "vasopressor" and found.get(key) and "agent" not in found[key]:
