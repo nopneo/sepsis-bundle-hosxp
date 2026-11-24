@@ -145,7 +145,7 @@
       {%- if locked %}<a class="btn" href="{{ url_for('unlock', next=request.full_path) }}">🔒 ดู HN/AN</a>
       {%- elif lock_enabled %}<form method="post" action="{{ url_for('lock') }}" style="display:inline">
         <button class="btn" type="submit">🔓 ซ่อน HN/AN</button></form>{% endif %}
-      <a class="btn" href="{{ url_for('settings') }}">⚙️ ตั้งค่าแจ้งเตือน</a></span></div>
+      {% if settings_link %}<a class="btn" href="{{ url_for('settings') }}">⚙️ ตั้งค่าแจ้งเตือน</a>{% endif %}</span></div>
     <form class="rf" method="get" action="{{ url_for('dashboard') }}">
       <label>ตั้งแต่<input type="date" name="d1" value="{{ d1.isoformat() }}" max="{{ today.isoformat() }}" required></label>
       <label>ถึง<input type="date" name="d2" value="{{ d2.isoformat() }}" max="{{ today.isoformat() }}" required></label>
