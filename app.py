@@ -9,6 +9,7 @@ production:  gunicorn -b 0.0.0.0:5500 app:app    (แนะนำให้ใช
 import hmac
 import ipaddress
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -17,6 +18,7 @@ from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.security import check_password_hash
 
 import config
@@ -28,21 +30,30 @@ import queries
 import ward_watch
 
 
+#: reverse proxy ที่เชื่อ X-Forwarded-For / -Prefix / -Proto ได้ (Apache บนเครื่องเดียวกัน)
+TRUSTED_PROXIES = {x.strip() for x in os.getenv("SEPSIS_TRUSTED_PROXIES", "127.0.0.1,::1").split(",") if x.strip()}
+#: sub-path ที่รับ: /ชื่อ หรือ /ชื่อ/ชื่อ — ไม่รับ // หรืออักขระที่แทรกลงลิงก์ได้
+_PREFIX_RE = re.compile(r"(/[A-Za-z0-9_-]+)+/?")
+
+
 class PrefixMiddleware:
-    """รองรับการวางแอปไว้หลัง reverse proxy แบบ sub-path (ถ้าจำเป็นต้องทำในอนาคต)"""
+    """รองรับการวางแอปไว้หลัง reverse proxy แบบ sub-path · เชื่อ header เฉพาะจาก TRUSTED_PROXIES"""
 
     def __init__(self, wsgi_app):
         self.wsgi_app = wsgi_app
 
     def __call__(self, environ, start_response):
-        prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "")
+        trusted = environ.get("REMOTE_ADDR", "") in TRUSTED_PROXIES
+        prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "") if trusted else ""
+        if prefix and not _PREFIX_RE.fullmatch(prefix):
+            prefix = ""
         if prefix:
             environ["SCRIPT_NAME"] = prefix.rstrip("/")
             path = environ.get("PATH_INFO", "")
             if path.startswith(prefix):
                 environ["PATH_INFO"] = path[len(prefix):] or "/"
-        proto = environ.get("HTTP_X_FORWARDED_PROTO")
-        if proto:
+        proto = environ.get("HTTP_X_FORWARDED_PROTO") if trusted else None
+        if proto in ("http", "https"):
             environ["wsgi.url_scheme"] = proto
         return self.wsgi_app(environ, start_response)
 
@@ -79,8 +90,16 @@ def _secret_key():
     raise RuntimeError(f"{SECRET_KEY_PATH} ว่าง — ลบไฟล์แล้วรีสตาร์ตแอป")
 
 
+class _SessionInterface(SecureCookieSessionInterface):
+    """cookie ติด Secure เมื่อคำขอเข้ามาทาง https (หลัง Apache = X-Forwarded-Proto จาก proxy ที่ไว้ใจ)"""
+
+    def get_cookie_secure(self, app):
+        return request.is_secure or super().get_cookie_secure(app)
+
+
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
+app.session_interface = _SessionInterface()
 app.secret_key = _secret_key()
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SEPSIS_UNLOCK_HOURS", "8")))
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
@@ -296,11 +315,88 @@ def _password_ok(scope, password):
     return bool(VIEW_PASSWORD_HASH) and check_password_hash(VIEW_PASSWORD_HASH, password)
 
 
+# ---------------------------------------------------------------- IP ผู้ใช้ / เครื่องใน รพ.
+
+def _nets(spec):
+    out = []
+    for x in (spec or "").split(","):
+        try:
+            out.append(ipaddress.ip_network(x.strip(), strict=False))
+        except ValueError:
+            pass
+    return out
+
+
+_CF_DEFAULT = ("173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,"
+               "190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,"
+               "104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,"
+               "2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32")
+CF_NETS = _nets(os.getenv("SEPSIS_CF_RANGES", _CF_DEFAULT))
+#: IP สาธารณะจริงของ รพ. (เข้าผ่าน Cloudflare) ที่นับเป็นเครื่องใน รพ. — ห้ามใส่ IP บ้าน/มือถือ
+LAN_NETS = _nets(os.getenv("SEPSIS_LAN_NETS", ""))
+#: IP ภายในมาตรฐาน — ระบุเอง ไม่ใช้ ip.is_private ที่นับช่วงสาธารณะบางช่วงเป็น private ด้วย
+PRIVATE_NETS = _nets("10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7")
+
+
+def _ip(v):
+    try:
+        ip = ipaddress.ip_address((v or "").strip())
+    except ValueError:
+        return None
+    return ip.ipv4_mapped if getattr(ip, "ipv4_mapped", None) else ip
+
+
+def client_ip():
+    """IP ผู้ใช้จริง — หลัง Apache remote_addr เป็น 127.0.0.1 เสมอ (เดิมตัวนับรหัสผิดเห็นทุกคนเป็น IP เดียว
+    ใครใส่ผิด 5 ครั้งทุกคนก็ใส่รหัสไม่ได้) · เชื่อ X-Forwarded-For ตัวท้ายสุด (Apache ต่อท้ายเอง) เฉพาะจาก
+    TRUSTED_PROXIES · ตัวท้ายสุดเป็นเครื่อง Cloudflare → ใช้ CF-Connecting-IP"""
+    ip = request.remote_addr or ""
+    if ip in TRUSTED_PROXIES:
+        xff = [x.strip() for x in request.headers.get("X-Forwarded-For", "").split(",") if x.strip()]
+        hop = xff[-1] if xff else ip
+        hop_ip = _ip(hop)
+        cf = request.headers.get("CF-Connecting-IP", "").strip()
+        ip = cf if cf and _ip(cf) and hop_ip and any(hop_ip in n for n in CF_NETS) else hop
+    return ip[:45] or "?"
+
+
+def from_lan():
+    """เครื่องใน รพ.: IP ภายใน (เช่นทางโดเมนภายใน lan.wnkhos.go.th) หรือ IP ใน SEPSIS_LAN_NETS
+    คำขอผ่าน Cloudflare นับเฉพาะ SEPSIS_LAN_NETS"""
+    ip = _ip(client_ip())
+    if ip is None:
+        return False
+    if any(ip in n for n in LAN_NETS):
+        return True
+    if request.headers.get("CF-Connecting-IP", "").strip():
+        return False
+    return any(ip in n for n in PRIVATE_NETS)
+
+
+def settings_allowed():
+    """หน้าตั้งค่า (เปลี่ยนปลายทาง/คีย์แจ้งเตือน LINE) เปิดได้เฉพาะเครื่องใน รพ. เป็นค่าเริ่มต้น
+    SEPSIS_SETTINGS_LAN_ONLY=0 = เปิดจากที่ใดก็ได้ (ยังต้องใช้รหัสหน้าตั้งค่า)"""
+    return os.getenv("SEPSIS_SETTINGS_LAN_ONLY", "1") == "0" or from_lan()
+
+
+def _settings_lan_page():
+    return Response("หน้าตั้งค่าแจ้งเตือนเปิดได้เฉพาะเครื่องในโรงพยาบาล "
+                    "(เครือข่าย รพ. หรือทางเข้าภายใน https://lan.wnkhos.go.th/sepsis/settings)\n"
+                    "แดชบอร์ดและหน้าเคสสงสัยเปิดได้ตามปกติ", 403, mimetype="text/plain")
+
+
+@app.context_processor
+def _settings_flag():
+    return {"settings_link": settings_allowed()}
+
+
 @app.route("/unlock", methods=["GET", "POST"])
 def unlock():
     scope = "settings" if request.values.get("scope") == "settings" else "view"
+    if scope == "settings" and not settings_allowed():
+        return _settings_lan_page()
     error = None
-    ip = request.remote_addr or "?"
+    ip = client_ip()
     if request.method == "POST":
         wait = login_guard.wait_seconds(ip)
         if wait:
@@ -359,6 +455,8 @@ def _settings_guard():
 
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
+    if not settings_allowed():
+        return _settings_lan_page()
     if settings_password_set() and not settings_unlocked():  # ถามรหัสหน้าตั้งค่าทุกครั้งที่เข้า
         return redirect(url_for("unlock", scope="settings", next=url_for("settings")))
     denied = _settings_guard()
